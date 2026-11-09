@@ -238,10 +238,11 @@ func (s *Service) Sync(ctx context.Context, userID int64) (*PortfolioResponse, e
 		LastSyncedAt:       syncedAtStr,
 	}
 
+	enrichedEquity, enrichedMF := s.enrichHoldings(ctx, userID, storedEquity, storedMF)
 	return &PortfolioResponse{
 		Summary:        summary,
-		EquityHoldings: storedEquity,
-		MFHoldings:     storedMF,
+		EquityHoldings: enrichedEquity,
+		MFHoldings:     enrichedMF,
 	}, nil
 }
 
@@ -319,11 +320,48 @@ func (s *Service) GetPortfolio(ctx context.Context, userID int64) (*PortfolioRes
 		}
 	}
 
+	enrichedEquity, enrichedMF := s.enrichHoldings(ctx, userID, holdings, mfHoldings)
 	return &PortfolioResponse{
 		Summary:        summary,
-		EquityHoldings: holdings,
-		MFHoldings:     mfHoldings,
+		EquityHoldings: enrichedEquity,
+		MFHoldings:     enrichedMF,
 	}, nil
+}
+
+func (s *Service) enrichHoldings(ctx context.Context, userID int64, equity []store.Holding, mf []store.MfHolding) ([]HoldingItem, []MFHoldingItem) {
+	goalAssets, _ := s.queries.ListGoalAssetsByUserID(ctx, userID)
+	assetGoalMap := make(map[string]int64, len(goalAssets))
+	for _, ga := range goalAssets {
+		assetGoalMap[ga.AssetType+":"+ga.AssetKey] = ga.GoalID
+	}
+
+	enrichedEquity := make([]HoldingItem, len(equity))
+	for i, h := range equity {
+		key := fmt.Sprintf("%s:%s", h.Tradingsymbol, h.Exchange)
+		item := HoldingItem{
+			Holding:  h,
+			AssetKey: key,
+		}
+		if gid, ok := assetGoalMap["equity:"+key]; ok {
+			item.GoalID = &gid
+		}
+		enrichedEquity[i] = item
+	}
+
+	enrichedMF := make([]MFHoldingItem, len(mf))
+	for i, m := range mf {
+		key := fmt.Sprintf("%s:%s", m.Folio, m.Fund)
+		item := MFHoldingItem{
+			MfHolding: m,
+			AssetKey:  key,
+		}
+		if gid, ok := assetGoalMap["mf:"+key]; ok {
+			item.GoalID = &gid
+		}
+		enrichedMF[i] = item
+	}
+
+	return enrichedEquity, enrichedMF
 }
 
 // GetHistory returns historical portfolio snapshots for the user.

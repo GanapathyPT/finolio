@@ -212,6 +212,50 @@ func (s *Service) DeleteGoal(ctx context.Context, userID, goalID int64) error {
 	})
 }
 
+// AssignAsset assigns an equity or MF asset to a goal, or unassigns it if goal_id is nil.
+func (s *Service) AssignAsset(ctx context.Context, userID int64, req AssignAssetRequest) error {
+	if req.AssetType != "equity" && req.AssetType != "mf" {
+		return errors.New("asset_type must be 'equity' or 'mf'")
+	}
+	if req.AssetKey == "" {
+		return errors.New("asset_key is required")
+	}
+
+	if req.GoalID == nil {
+		return s.queries.UnassignAssetFromGoal(ctx, store.UnassignAssetFromGoalParams{
+			UserID:    userID,
+			AssetType: req.AssetType,
+			AssetKey:  req.AssetKey,
+		})
+	}
+
+	// Verify goal exists and belongs to user
+	_, err := s.queries.GetGoalByID(ctx, store.GetGoalByIDParams{
+		ID:     *req.GoalID,
+		UserID: userID,
+	})
+	if err != nil {
+		return fmt.Errorf("target goal not found: %w", err)
+	}
+
+	_, err = s.queries.AssignAssetToGoal(ctx, store.AssignAssetToGoalParams{
+		UserID:    userID,
+		GoalID:    *req.GoalID,
+		AssetType: req.AssetType,
+		AssetKey:  req.AssetKey,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to assign asset to goal: %w", err)
+	}
+
+	return nil
+}
+
+// GetGoalAssets returns all asset-to-goal mappings for the user.
+func (s *Service) GetGoalAssets(ctx context.Context, userID int64) ([]store.GoalAsset, error) {
+	return s.queries.ListGoalAssetsByUserID(ctx, userID)
+}
+
 func toGoalNode(g store.Goal) *GoalNode {
 	node := &GoalNode{
 		ID:          g.ID,
@@ -241,4 +285,3 @@ func toGoalNode(g store.Goal) *GoalNode {
 
 	return node
 }
-

@@ -9,6 +9,48 @@ import (
 	"context"
 )
 
+const assignAssetToGoal = `-- name: AssignAssetToGoal :one
+INSERT INTO goal_assets (
+    user_id,
+    goal_id,
+    asset_type,
+    asset_key,
+    created_at
+) VALUES (
+    ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+)
+ON CONFLICT(user_id, asset_type, asset_key) DO UPDATE SET
+    goal_id = excluded.goal_id,
+    created_at = excluded.created_at
+RETURNING id, user_id, goal_id, asset_type, asset_key, created_at
+`
+
+type AssignAssetToGoalParams struct {
+	UserID    int64  `db:"user_id" json:"user_id"`
+	GoalID    int64  `db:"goal_id" json:"goal_id"`
+	AssetType string `db:"asset_type" json:"asset_type"`
+	AssetKey  string `db:"asset_key" json:"asset_key"`
+}
+
+func (q *Queries) AssignAssetToGoal(ctx context.Context, arg AssignAssetToGoalParams) (GoalAsset, error) {
+	row := q.db.QueryRowContext(ctx, assignAssetToGoal,
+		arg.UserID,
+		arg.GoalID,
+		arg.AssetType,
+		arg.AssetKey,
+	)
+	var i GoalAsset
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.GoalID,
+		&i.AssetType,
+		&i.AssetKey,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const countGoalsByUserID = `-- name: CountGoalsByUserID :one
 SELECT COUNT(*) FROM goals
 WHERE user_id = ?
@@ -110,6 +152,41 @@ func (q *Queries) GetGoalByID(ctx context.Context, arg GetGoalByIDParams) (Goal,
 	return i, err
 }
 
+const listGoalAssetsByUserID = `-- name: ListGoalAssetsByUserID :many
+SELECT id, user_id, goal_id, asset_type, asset_key, created_at FROM goal_assets
+WHERE user_id = ?
+`
+
+func (q *Queries) ListGoalAssetsByUserID(ctx context.Context, userID int64) ([]GoalAsset, error) {
+	rows, err := q.db.QueryContext(ctx, listGoalAssetsByUserID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GoalAsset{}
+	for rows.Next() {
+		var i GoalAsset
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.GoalID,
+			&i.AssetType,
+			&i.AssetKey,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listGoalsByUserID = `-- name: ListGoalsByUserID :many
 SELECT id, user_id, parent_id, title, description, target_amount, target_date, created_at, updated_at FROM goals
 WHERE user_id = ?
@@ -147,6 +224,22 @@ func (q *Queries) ListGoalsByUserID(ctx context.Context, userID int64) ([]Goal, 
 		return nil, err
 	}
 	return items, nil
+}
+
+const unassignAssetFromGoal = `-- name: UnassignAssetFromGoal :exec
+DELETE FROM goal_assets
+WHERE user_id = ? AND asset_type = ? AND asset_key = ?
+`
+
+type UnassignAssetFromGoalParams struct {
+	UserID    int64  `db:"user_id" json:"user_id"`
+	AssetType string `db:"asset_type" json:"asset_type"`
+	AssetKey  string `db:"asset_key" json:"asset_key"`
+}
+
+func (q *Queries) UnassignAssetFromGoal(ctx context.Context, arg UnassignAssetFromGoalParams) error {
+	_, err := q.db.ExecContext(ctx, unassignAssetFromGoal, arg.UserID, arg.AssetType, arg.AssetKey)
+	return err
 }
 
 const updateGoal = `-- name: UpdateGoal :one

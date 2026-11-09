@@ -186,3 +186,82 @@ func TestGoalsValidation(t *testing.T) {
 	}
 }
 
+func TestGoalAssetTagging(t *testing.T) {
+	tempDB := filepath.Join(t.TempDir(), "test_assets.db")
+	db, err := database.Open(tempDB)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	queries := store.New(db)
+	ctx := context.Background()
+
+	user, err := queries.UpsertUser(ctx, store.UpsertUserParams{
+		KiteID:   "GOAL03",
+		UserName: "Tag User",
+		Email:    "tag@example.com",
+	})
+	if err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	service := NewService(db, queries)
+
+	// Ensure default goals exist
+	roots, err := service.GetGoalsTree(ctx, user.ID)
+	if err != nil || len(roots) < 2 {
+		t.Fatalf("failed to get default goals")
+	}
+	goalID := roots[0].ID
+
+	// 1. Assign equity asset to goal
+	err = service.AssignAsset(ctx, user.ID, AssignAssetRequest{
+		AssetType: "equity",
+		AssetKey:  "INFY:NSE",
+		GoalID:    &goalID,
+	})
+	if err != nil {
+		t.Fatalf("failed to assign asset: %v", err)
+	}
+
+	// 2. Query goal assets
+	assets, err := service.GetGoalAssets(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("failed to get goal assets: %v", err)
+	}
+	if len(assets) != 1 || assets[0].GoalID != goalID || assets[0].AssetKey != "INFY:NSE" {
+		t.Fatalf("unexpected goal assets: %+v", assets)
+	}
+
+	// 3. Move asset to another goal
+	otherGoalID := roots[1].ID
+	err = service.AssignAsset(ctx, user.ID, AssignAssetRequest{
+		AssetType: "equity",
+		AssetKey:  "INFY:NSE",
+		GoalID:    &otherGoalID,
+	})
+	if err != nil {
+		t.Fatalf("failed to reassign asset: %v", err)
+	}
+
+	assets, err = service.GetGoalAssets(ctx, user.ID)
+	if err != nil || len(assets) != 1 || assets[0].GoalID != otherGoalID {
+		t.Fatalf("expected asset moved to other goal, got %+v", assets)
+	}
+
+	// 4. Unassign asset (goal_id = nil) -> moves back to dangling
+	err = service.AssignAsset(ctx, user.ID, AssignAssetRequest{
+		AssetType: "equity",
+		AssetKey:  "INFY:NSE",
+		GoalID:    nil,
+	})
+	if err != nil {
+		t.Fatalf("failed to unassign asset: %v", err)
+	}
+
+	assets, err = service.GetGoalAssets(ctx, user.ID)
+	if err != nil || len(assets) != 0 {
+		t.Fatalf("expected 0 goal assets after unassign, got %+v", assets)
+	}
+}

@@ -20,6 +20,15 @@ type Goal struct {
 	UpdatedAt    time.Time   `db:"updated_at" json:"updated_at"`
 }
 
+type GoalAsset struct {
+	ID        int64     `db:"id" json:"id"`
+	UserID    int64     `db:"user_id" json:"user_id"`
+	GoalID    int64     `db:"goal_id" json:"goal_id"`
+	AssetType string    `db:"asset_type" json:"asset_type"`
+	AssetKey  string    `db:"asset_key" json:"asset_key"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+}
+
 type Holding struct {
 	ID                  int64     `db:"id" json:"id"`
 	UserID              int64     `db:"user_id" json:"user_id"`

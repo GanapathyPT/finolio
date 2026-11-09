@@ -22,9 +22,23 @@ type PortfolioSummary struct {
 	LastSyncedAt       string  `json:"last_synced_at,omitempty"`
 }
 
+// HoldingItem decorates store.Holding with asset key and optional goal_id.
+type HoldingItem struct {
+	store.Holding
+	AssetKey string `json:"asset_key"`
+	GoalID   *int64 `json:"goal_id"`
+}
+
+// MFHoldingItem decorates store.MfHolding with asset key and optional goal_id.
+type MFHoldingItem struct {
+	store.MfHolding
+	AssetKey string `json:"asset_key"`
+	GoalID   *int64 `json:"goal_id"`
+}
+
 // PortfolioResponse holds equity holdings, mutual funds, and combined summary returned to the frontend.
 type PortfolioResponse struct {
-	Summary        PortfolioSummary  `json:"summary"`
-	EquityHoldings []store.Holding   `json:"equity_holdings"`
-	MFHoldings     []store.MfHolding `json:"mf_holdings"`
+	Summary        PortfolioSummary `json:"summary"`
+	EquityHoldings []HoldingItem    `json:"equity_holdings"`
+	MFHoldings     []MFHoldingItem  `json:"mf_holdings"`
 }

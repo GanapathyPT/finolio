@@ -36,3 +36,9 @@ type UpdateGoalRequest struct {
 	TargetDate   *string  `json:"target_date"`
 }
 
+// AssignAssetRequest is the payload for assigning or unassigning an asset to/from a goal.
+type AssignAssetRequest struct {
+	AssetType string `json:"asset_type"` // "equity" or "mf"
+	AssetKey  string `json:"asset_key"`  // e.g. "INFY:NSE" or "folio:fund"
+	GoalID    *int64 `json:"goal_id"`    // if nil, unassigns from goal (moves to dangling)
+}
