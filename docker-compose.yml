@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: finolio:latest
+    image: finolio:${APP_VERSION:-0.1.0}
     container_name: finolio
     restart: unless-stopped
     ports:
