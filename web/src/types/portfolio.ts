@@ -39,6 +39,8 @@ export interface Holding {
   day_change_percentage: number
   discrepancy: number
   synced_at: string
+  asset_key?: string
+  goal_id?: number | null
 }
 
 export interface MfHolding {
@@ -53,6 +55,8 @@ export interface MfHolding {
   pnl: number
   quantity: number
   synced_at: string
+  asset_key?: string
+  goal_id?: number | null
 }
 
 export interface PortfolioSnapshot {
