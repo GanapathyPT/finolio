@@ -1,10 +1,10 @@
 services:
-  backend:
+  app:
     build:
       context: .
       dockerfile: Dockerfile
-    image: finolio-backend:latest
-    container_name: finolio-backend
+    image: finolio:latest
+    container_name: finolio
     restart: unless-stopped
     ports:
       - "${HTTP_PORT:-8080}:8080"
@@ -13,6 +13,7 @@ services:
       - HTTP_HOST=0.0.0.0
       - HTTP_PORT=8080
       - DB_FILE=/data/finolio.db
+      - STATIC_DIR=/app/web/dist
       - KITE_API_KEY=${KITE_API_KEY:-your_kite_api_key}
       - KITE_API_SECRET=${KITE_API_SECRET:-your_kite_api_secret}
       - LOG_LEVEL=${LOG_LEVEL:-info}
@@ -25,20 +26,6 @@ services:
       retries: 3
       start_period: 5s
 
-  frontend:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
-    image: finolio-frontend:latest
-    container_name: finolio-frontend
-    restart: unless-stopped
-    ports:
-      - "${FRONTEND_PORT:-5173}:80"
-    depends_on:
-      backend:
-        condition: service_healthy
-
 volumes:
   finolio_data:
     name: finolio_data
-

@@ -66,6 +66,7 @@ All configuration is loaded via environment variables (with no ldflags injection
 | `APP_BUILD_TIME` | No | `unknown` | RFC 3339 build timestamp |
 | `LOG_LEVEL` | No | `info` | Structured logger level |
 | `DB_FILE` | No | `finolio.db` | SQLite database file path |
+| `STATIC_DIR` | No | `web/dist` | Directory containing static web assets to serve |
 
 ## Running Locally with Docker
 
@@ -73,15 +74,14 @@ All configuration is loaded via environment variables (with no ldflags injection
    ```bash
    cp .env.example .env
    ```
-2. Build and start the services using Docker Compose:
+2. Build and start the service using Docker Compose:
    ```bash
    docker compose up -d
    # or: make docker-up
    ```
 3. Open the application:
-   - Frontend: `http://localhost:5173`
-   - Backend API: `http://localhost:8080/api/healthz`
-4. Stop the services:
+   - Web App & API: `http://localhost:8080` (or `http://localhost:8080/api/healthz`)
+4. Stop the service:
    ```bash
    docker compose down
    # or: make docker-down

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -50,6 +51,17 @@ func New(cfg *config.Config, queries *store.Queries) *Server {
 			r.Post("/logout", authHandler.Logout)
 		})
 	})
+
+	// -- Static files / SPA --------------------------------------------------
+	// Serve compiled web assets if StaticDir exists on disk.
+	if cfg.StaticDir != "" {
+		if info, err := os.Stat(cfg.StaticDir); err == nil && info.IsDir() {
+			slog.Info("serving static files", "dir", cfg.StaticDir)
+			r.Get("/*", spaHandler(cfg.StaticDir))
+		} else {
+			slog.Info("static directory not found, static file server disabled", "dir", cfg.StaticDir)
+		}
+	}
 
 	s.http = &http.Server{
 		Addr:         cfg.Addr(),

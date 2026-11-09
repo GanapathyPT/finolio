@@ -27,6 +27,10 @@ type Config struct {
 	// DBFile is the path to the SQLite database file.
 	DBFile string
 
+	// -- Web / Static Content ------------------------------------------------
+	// StaticDir is the path to the directory containing frontend assets.
+	StaticDir string
+
 	// -- Kite Connect --------------------------------------------------------
 	// KiteAPIKey is the API key issued by Zerodha for Kite Connect.
 	KiteAPIKey string
@@ -78,6 +82,9 @@ func Load() (*Config, error) {
 
 		// Database
 		DBFile: envStr("DB_FILE", "finolio.db"),
+
+		// Static assets
+		StaticDir: envStr("STATIC_DIR", "web/dist"),
 
 		// Kite Connect
 		KiteAPIKey:    kiteAPIKey,
