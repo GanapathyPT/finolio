@@ -16,6 +16,7 @@ import (
 
 	"github.com/ganapathypt/finolio/internal/auth"
 	"github.com/ganapathypt/finolio/internal/config"
+	"github.com/ganapathypt/finolio/internal/goals"
 	"github.com/ganapathypt/finolio/internal/portfolio"
 	"github.com/ganapathypt/finolio/internal/store"
 )
@@ -43,9 +44,13 @@ func New(cfg *config.Config, db *sql.DB, queries *store.Queries) *Server {
 	// All application routes live under /api.
 	authHandler := auth.NewHandler(cfg, queries)
 	var portfolioHandler *portfolio.Handler
+	var goalsHandler *goals.Handler
 	if db != nil && queries != nil {
 		portfolioService := portfolio.NewService(db, queries, cfg.KiteAPIKey, nil)
 		portfolioHandler = portfolio.NewHandler(portfolioService)
+
+		goalsService := goals.NewService(db, queries)
+		goalsHandler = goals.NewHandler(goalsService)
 	}
 
 	r.Route("/api", func(r chi.Router) {
@@ -65,6 +70,17 @@ func New(cfg *config.Config, db *sql.DB, queries *store.Queries) *Server {
 				r.Post("/sync", portfolioHandler.Sync)
 				r.Get("/", portfolioHandler.GetPortfolio)
 				r.Get("/history", portfolioHandler.GetHistory)
+			})
+		}
+
+		// Financial Goals
+		if goalsHandler != nil {
+			r.Route("/goals", func(r chi.Router) {
+				r.Get("/", goalsHandler.ListTree)
+				r.Post("/", goalsHandler.Create)
+				r.Get("/{id}", goalsHandler.GetByID)
+				r.Put("/{id}", goalsHandler.Update)
+				r.Delete("/{id}", goalsHandler.Delete)
 			})
 		}
 	})

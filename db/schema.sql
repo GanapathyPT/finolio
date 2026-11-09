@@ -80,6 +80,20 @@ CREATE TABLE IF NOT EXISTS portfolio_snapshots (
     created_at            DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
+CREATE TABLE IF NOT EXISTS goals (
+    id             INTEGER  PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER  NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    parent_id      INTEGER  NULL REFERENCES goals(id) ON DELETE CASCADE,
+    title          TEXT     NOT NULL,
+    description    TEXT     NOT NULL DEFAULT '',
+    target_amount  REAL     NULL,
+    target_date    TEXT     NULL,
+    created_at     DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at     DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_holdings_user ON holdings(user_id);
 CREATE INDEX IF NOT EXISTS idx_mf_holdings_user ON mf_holdings(user_id);
 CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_user ON portfolio_snapshots(user_id, snapshot_date);
+CREATE INDEX IF NOT EXISTS idx_goals_user ON goals(user_id);
+CREATE INDEX IF NOT EXISTS idx_goals_parent ON goals(parent_id);

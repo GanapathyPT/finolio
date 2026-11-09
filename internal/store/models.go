@@ -8,6 +8,18 @@ import (
 	"time"
 )
 
+type Goal struct {
+	ID           int64       `db:"id" json:"id"`
+	UserID       int64       `db:"user_id" json:"user_id"`
+	ParentID     interface{} `db:"parent_id" json:"parent_id"`
+	Title        string      `db:"title" json:"title"`
+	Description  string      `db:"description" json:"description"`
+	TargetAmount interface{} `db:"target_amount" json:"target_amount"`
+	TargetDate   interface{} `db:"target_date" json:"target_date"`
+	CreatedAt    time.Time   `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time   `db:"updated_at" json:"updated_at"`
+}
+
 type Holding struct {
 	ID                  int64     `db:"id" json:"id"`
 	UserID              int64     `db:"user_id" json:"user_id"`
