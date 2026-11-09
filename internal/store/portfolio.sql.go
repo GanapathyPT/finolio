@@ -20,6 +20,16 @@ func (q *Queries) DeleteHoldingsByUserID(ctx context.Context, userID int64) erro
 	return err
 }
 
+const deleteMFHoldingsByUserID = `-- name: DeleteMFHoldingsByUserID :exec
+DELETE FROM mf_holdings
+WHERE user_id = ?
+`
+
+func (q *Queries) DeleteMFHoldingsByUserID(ctx context.Context, userID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteMFHoldingsByUserID, userID)
+	return err
+}
+
 const getHoldingsByUserID = `-- name: GetHoldingsByUserID :many
 SELECT id, user_id, tradingsymbol, exchange, instrument_token, isin, product, price, quantity, t1_quantity, realised_quantity, authorised_quantity, opening_quantity, collateral_quantity, collateral_type, average_price, last_price, close_price, pnl, day_change, day_change_percentage, discrepancy, synced_at FROM holdings
 WHERE user_id = ?
@@ -74,7 +84,7 @@ func (q *Queries) GetHoldingsByUserID(ctx context.Context, userID int64) ([]Hold
 }
 
 const getLatestPortfolioSnapshot = `-- name: GetLatestPortfolioSnapshot :one
-SELECT id, user_id, total_investment, current_value, total_pnl, total_pnl_percentage, day_pnl, holdings_count, snapshot_date, created_at FROM portfolio_snapshots
+SELECT id, user_id, status, error_message, equity_investment, equity_current_value, equity_pnl, equity_count, mf_investment, mf_current_value, mf_pnl, mf_count, total_investment, current_value, total_pnl, total_pnl_percentage, day_pnl, snapshot_date, created_at FROM portfolio_snapshots
 WHERE user_id = ?
 ORDER BY created_at DESC
 LIMIT 1
@@ -86,16 +96,100 @@ func (q *Queries) GetLatestPortfolioSnapshot(ctx context.Context, userID int64) 
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.Status,
+		&i.ErrorMessage,
+		&i.EquityInvestment,
+		&i.EquityCurrentValue,
+		&i.EquityPnl,
+		&i.EquityCount,
+		&i.MfInvestment,
+		&i.MfCurrentValue,
+		&i.MfPnl,
+		&i.MfCount,
 		&i.TotalInvestment,
 		&i.CurrentValue,
 		&i.TotalPnl,
 		&i.TotalPnlPercentage,
 		&i.DayPnl,
-		&i.HoldingsCount,
 		&i.SnapshotDate,
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const getLatestSuccessfulPortfolioSnapshot = `-- name: GetLatestSuccessfulPortfolioSnapshot :one
+SELECT id, user_id, status, error_message, equity_investment, equity_current_value, equity_pnl, equity_count, mf_investment, mf_current_value, mf_pnl, mf_count, total_investment, current_value, total_pnl, total_pnl_percentage, day_pnl, snapshot_date, created_at FROM portfolio_snapshots
+WHERE user_id = ? AND status = 'success'
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetLatestSuccessfulPortfolioSnapshot(ctx context.Context, userID int64) (PortfolioSnapshot, error) {
+	row := q.db.QueryRowContext(ctx, getLatestSuccessfulPortfolioSnapshot, userID)
+	var i PortfolioSnapshot
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Status,
+		&i.ErrorMessage,
+		&i.EquityInvestment,
+		&i.EquityCurrentValue,
+		&i.EquityPnl,
+		&i.EquityCount,
+		&i.MfInvestment,
+		&i.MfCurrentValue,
+		&i.MfPnl,
+		&i.MfCount,
+		&i.TotalInvestment,
+		&i.CurrentValue,
+		&i.TotalPnl,
+		&i.TotalPnlPercentage,
+		&i.DayPnl,
+		&i.SnapshotDate,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getMFHoldingsByUserID = `-- name: GetMFHoldingsByUserID :many
+SELECT id, user_id, folio, fund, tradingsymbol, average_price, last_price, last_price_date, pnl, quantity, synced_at FROM mf_holdings
+WHERE user_id = ?
+ORDER BY (quantity * last_price) DESC
+`
+
+func (q *Queries) GetMFHoldingsByUserID(ctx context.Context, userID int64) ([]MfHolding, error) {
+	rows, err := q.db.QueryContext(ctx, getMFHoldingsByUserID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MfHolding{}
+	for rows.Next() {
+		var i MfHolding
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Folio,
+			&i.Fund,
+			&i.Tradingsymbol,
+			&i.AveragePrice,
+			&i.LastPrice,
+			&i.LastPriceDate,
+			&i.Pnl,
+			&i.Quantity,
+			&i.SyncedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const insertHolding = `-- name: InsertHolding :one
@@ -207,31 +301,110 @@ func (q *Queries) InsertHolding(ctx context.Context, arg InsertHoldingParams) (H
 	return i, err
 }
 
+const insertMFHolding = `-- name: InsertMFHolding :one
+INSERT INTO mf_holdings (
+    user_id,
+    folio,
+    fund,
+    tradingsymbol,
+    average_price,
+    last_price,
+    last_price_date,
+    pnl,
+    quantity,
+    synced_at
+) VALUES (
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+)
+RETURNING id, user_id, folio, fund, tradingsymbol, average_price, last_price, last_price_date, pnl, quantity, synced_at
+`
+
+type InsertMFHoldingParams struct {
+	UserID        int64     `db:"user_id" json:"user_id"`
+	Folio         string    `db:"folio" json:"folio"`
+	Fund          string    `db:"fund" json:"fund"`
+	Tradingsymbol string    `db:"tradingsymbol" json:"tradingsymbol"`
+	AveragePrice  float64   `db:"average_price" json:"average_price"`
+	LastPrice     float64   `db:"last_price" json:"last_price"`
+	LastPriceDate string    `db:"last_price_date" json:"last_price_date"`
+	Pnl           float64   `db:"pnl" json:"pnl"`
+	Quantity      float64   `db:"quantity" json:"quantity"`
+	SyncedAt      time.Time `db:"synced_at" json:"synced_at"`
+}
+
+func (q *Queries) InsertMFHolding(ctx context.Context, arg InsertMFHoldingParams) (MfHolding, error) {
+	row := q.db.QueryRowContext(ctx, insertMFHolding,
+		arg.UserID,
+		arg.Folio,
+		arg.Fund,
+		arg.Tradingsymbol,
+		arg.AveragePrice,
+		arg.LastPrice,
+		arg.LastPriceDate,
+		arg.Pnl,
+		arg.Quantity,
+		arg.SyncedAt,
+	)
+	var i MfHolding
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Folio,
+		&i.Fund,
+		&i.Tradingsymbol,
+		&i.AveragePrice,
+		&i.LastPrice,
+		&i.LastPriceDate,
+		&i.Pnl,
+		&i.Quantity,
+		&i.SyncedAt,
+	)
+	return i, err
+}
+
 const insertPortfolioSnapshot = `-- name: InsertPortfolioSnapshot :one
 INSERT INTO portfolio_snapshots (
     user_id,
+    status,
+    error_message,
+    equity_investment,
+    equity_current_value,
+    equity_pnl,
+    equity_count,
+    mf_investment,
+    mf_current_value,
+    mf_pnl,
+    mf_count,
     total_investment,
     current_value,
     total_pnl,
     total_pnl_percentage,
     day_pnl,
-    holdings_count,
     snapshot_date,
     created_at
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
-RETURNING id, user_id, total_investment, current_value, total_pnl, total_pnl_percentage, day_pnl, holdings_count, snapshot_date, created_at
+RETURNING id, user_id, status, error_message, equity_investment, equity_current_value, equity_pnl, equity_count, mf_investment, mf_current_value, mf_pnl, mf_count, total_investment, current_value, total_pnl, total_pnl_percentage, day_pnl, snapshot_date, created_at
 `
 
 type InsertPortfolioSnapshotParams struct {
 	UserID             int64     `db:"user_id" json:"user_id"`
+	Status             string    `db:"status" json:"status"`
+	ErrorMessage       string    `db:"error_message" json:"error_message"`
+	EquityInvestment   float64   `db:"equity_investment" json:"equity_investment"`
+	EquityCurrentValue float64   `db:"equity_current_value" json:"equity_current_value"`
+	EquityPnl          float64   `db:"equity_pnl" json:"equity_pnl"`
+	EquityCount        int64     `db:"equity_count" json:"equity_count"`
+	MfInvestment       float64   `db:"mf_investment" json:"mf_investment"`
+	MfCurrentValue     float64   `db:"mf_current_value" json:"mf_current_value"`
+	MfPnl              float64   `db:"mf_pnl" json:"mf_pnl"`
+	MfCount            int64     `db:"mf_count" json:"mf_count"`
 	TotalInvestment    float64   `db:"total_investment" json:"total_investment"`
 	CurrentValue       float64   `db:"current_value" json:"current_value"`
 	TotalPnl           float64   `db:"total_pnl" json:"total_pnl"`
 	TotalPnlPercentage float64   `db:"total_pnl_percentage" json:"total_pnl_percentage"`
 	DayPnl             float64   `db:"day_pnl" json:"day_pnl"`
-	HoldingsCount      int64     `db:"holdings_count" json:"holdings_count"`
 	SnapshotDate       string    `db:"snapshot_date" json:"snapshot_date"`
 	CreatedAt          time.Time `db:"created_at" json:"created_at"`
 }
@@ -239,12 +412,21 @@ type InsertPortfolioSnapshotParams struct {
 func (q *Queries) InsertPortfolioSnapshot(ctx context.Context, arg InsertPortfolioSnapshotParams) (PortfolioSnapshot, error) {
 	row := q.db.QueryRowContext(ctx, insertPortfolioSnapshot,
 		arg.UserID,
+		arg.Status,
+		arg.ErrorMessage,
+		arg.EquityInvestment,
+		arg.EquityCurrentValue,
+		arg.EquityPnl,
+		arg.EquityCount,
+		arg.MfInvestment,
+		arg.MfCurrentValue,
+		arg.MfPnl,
+		arg.MfCount,
 		arg.TotalInvestment,
 		arg.CurrentValue,
 		arg.TotalPnl,
 		arg.TotalPnlPercentage,
 		arg.DayPnl,
-		arg.HoldingsCount,
 		arg.SnapshotDate,
 		arg.CreatedAt,
 	)
@@ -252,12 +434,21 @@ func (q *Queries) InsertPortfolioSnapshot(ctx context.Context, arg InsertPortfol
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.Status,
+		&i.ErrorMessage,
+		&i.EquityInvestment,
+		&i.EquityCurrentValue,
+		&i.EquityPnl,
+		&i.EquityCount,
+		&i.MfInvestment,
+		&i.MfCurrentValue,
+		&i.MfPnl,
+		&i.MfCount,
 		&i.TotalInvestment,
 		&i.CurrentValue,
 		&i.TotalPnl,
 		&i.TotalPnlPercentage,
 		&i.DayPnl,
-		&i.HoldingsCount,
 		&i.SnapshotDate,
 		&i.CreatedAt,
 	)
@@ -265,7 +456,7 @@ func (q *Queries) InsertPortfolioSnapshot(ctx context.Context, arg InsertPortfol
 }
 
 const listPortfolioSnapshotsByUserID = `-- name: ListPortfolioSnapshotsByUserID :many
-SELECT id, user_id, total_investment, current_value, total_pnl, total_pnl_percentage, day_pnl, holdings_count, snapshot_date, created_at FROM portfolio_snapshots
+SELECT id, user_id, status, error_message, equity_investment, equity_current_value, equity_pnl, equity_count, mf_investment, mf_current_value, mf_pnl, mf_count, total_investment, current_value, total_pnl, total_pnl_percentage, day_pnl, snapshot_date, created_at FROM portfolio_snapshots
 WHERE user_id = ?
 ORDER BY created_at ASC
 LIMIT ?
@@ -288,12 +479,21 @@ func (q *Queries) ListPortfolioSnapshotsByUserID(ctx context.Context, arg ListPo
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
+			&i.Status,
+			&i.ErrorMessage,
+			&i.EquityInvestment,
+			&i.EquityCurrentValue,
+			&i.EquityPnl,
+			&i.EquityCount,
+			&i.MfInvestment,
+			&i.MfCurrentValue,
+			&i.MfPnl,
+			&i.MfCount,
 			&i.TotalInvestment,
 			&i.CurrentValue,
 			&i.TotalPnl,
 			&i.TotalPnlPercentage,
 			&i.DayPnl,
-			&i.HoldingsCount,
 			&i.SnapshotDate,
 			&i.CreatedAt,
 		); err != nil {

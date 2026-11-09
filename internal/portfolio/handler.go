@@ -1,10 +1,12 @@
 package portfolio
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/ganapathypt/finolio/internal/auth"
 )
@@ -29,7 +31,12 @@ func (h *Handler) Sync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	portfolio, err := h.service.Sync(r.Context(), userID)
+	// Use an independent 30-second timeout so the sync and database transaction
+	// do not abort with "context canceled" if the browser client disconnects or reloads.
+	syncCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	portfolio, err := h.service.Sync(syncCtx, userID)
 	if err != nil {
 		slog.Error("failed to sync portfolio", "user_id", userID, "error", err)
 		w.Header().Set("Content-Type", "application/json")

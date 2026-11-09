@@ -7,15 +7,20 @@ export const portfolioQueryKey = ['portfolio'] as const
 export function usePortfolio() {
   const queryClient = useQueryClient()
 
+  // Reads the stored portfolio from local SQLite. Never polls in the background.
   const portfolioQuery = useQuery<PortfolioResponse>({
     queryKey: portfolioQueryKey,
     queryFn: fetchPortfolio,
-    staleTime: 1000 * 60 * 5, // 5 minutes
-    retry: 1,
+    staleTime: Infinity, // Do not auto-refetch
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
   })
 
+  // sync is strictly triggered by user interaction (button click). No background calls.
   const syncMutation = useMutation({
     mutationFn: syncPortfolio,
+    retry: false, // User demand: no retry if call fails
     onSuccess: (data) => {
       queryClient.setQueryData(portfolioQueryKey, data)
     },
@@ -32,4 +37,3 @@ export function usePortfolio() {
     syncError: syncMutation.error,
   }
 }
-

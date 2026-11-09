@@ -43,18 +43,43 @@ CREATE TABLE IF NOT EXISTS holdings (
     UNIQUE(user_id, tradingsymbol, exchange)
 );
 
+CREATE TABLE IF NOT EXISTS mf_holdings (
+    id              INTEGER  PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER  NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    folio           TEXT     NOT NULL,
+    fund            TEXT     NOT NULL,
+    tradingsymbol   TEXT     NOT NULL,
+    average_price   REAL     NOT NULL DEFAULT 0.0,
+    last_price      REAL     NOT NULL DEFAULT 0.0,
+    last_price_date TEXT     NOT NULL DEFAULT '',
+    pnl             REAL     NOT NULL DEFAULT 0.0,
+    quantity        REAL     NOT NULL DEFAULT 0.0,
+    synced_at       DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE(user_id, folio, fund)
+);
+
 CREATE TABLE IF NOT EXISTS portfolio_snapshots (
-    id                   INTEGER  PRIMARY KEY AUTOINCREMENT,
-    user_id              INTEGER  NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    total_investment     REAL     NOT NULL DEFAULT 0.0,
-    current_value        REAL     NOT NULL DEFAULT 0.0,
-    total_pnl            REAL     NOT NULL DEFAULT 0.0,
-    total_pnl_percentage  REAL     NOT NULL DEFAULT 0.0,
-    day_pnl              REAL     NOT NULL DEFAULT 0.0,
-    holdings_count       INTEGER  NOT NULL DEFAULT 0,
-    snapshot_date        TEXT     NOT NULL, -- YYYY-MM-DD
-    created_at           DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    id                    INTEGER  PRIMARY KEY AUTOINCREMENT,
+    user_id               INTEGER  NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status                TEXT     NOT NULL DEFAULT 'success', -- 'success' or 'failed'
+    error_message         TEXT     NOT NULL DEFAULT '',
+    equity_investment     REAL     NOT NULL DEFAULT 0.0,
+    equity_current_value  REAL     NOT NULL DEFAULT 0.0,
+    equity_pnl            REAL     NOT NULL DEFAULT 0.0,
+    equity_count          INTEGER  NOT NULL DEFAULT 0,
+    mf_investment         REAL     NOT NULL DEFAULT 0.0,
+    mf_current_value      REAL     NOT NULL DEFAULT 0.0,
+    mf_pnl                REAL     NOT NULL DEFAULT 0.0,
+    mf_count              INTEGER  NOT NULL DEFAULT 0,
+    total_investment      REAL     NOT NULL DEFAULT 0.0,
+    current_value         REAL     NOT NULL DEFAULT 0.0,
+    total_pnl             REAL     NOT NULL DEFAULT 0.0,
+    total_pnl_percentage   REAL     NOT NULL DEFAULT 0.0,
+    day_pnl               REAL     NOT NULL DEFAULT 0.0,
+    snapshot_date         TEXT     NOT NULL, -- YYYY-MM-DD
+    created_at            DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_holdings_user ON holdings(user_id);
+CREATE INDEX IF NOT EXISTS idx_mf_holdings_user ON mf_holdings(user_id);
 CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_user ON portfolio_snapshots(user_id, snapshot_date);

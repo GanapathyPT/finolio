@@ -2,6 +2,7 @@ package portfolio
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -13,14 +14,25 @@ import (
 )
 
 type mockKiteClient struct {
-	holdings kiteconnect.Holdings
+	holdings      kiteconnect.Holdings
+	holdingsErr   error
+	mf            kiteconnect.MFHoldings
+	mfErr         error
+	holdingsCalls int
+	mfCalls       int
 }
 
 func (m *mockKiteClient) GetHoldings() (kiteconnect.Holdings, error) {
-	return m.holdings, nil
+	m.holdingsCalls++
+	return m.holdings, m.holdingsErr
 }
 
-func TestPortfolioSyncAndRetrieval(t *testing.T) {
+func (m *mockKiteClient) GetMFHoldings() (kiteconnect.MFHoldings, error) {
+	m.mfCalls++
+	return m.mf, m.mfErr
+}
+
+func TestPortfolioSyncBothSegmentsSuccess(t *testing.T) {
 	tempDB := filepath.Join(t.TempDir(), "test_portfolio.db")
 	db, err := database.Open(tempDB)
 	if err != nil {
@@ -51,7 +63,7 @@ func TestPortfolioSyncAndRetrieval(t *testing.T) {
 		t.Fatalf("failed to create session: %v", err)
 	}
 
-	// 2. Prepare mock Kite holdings
+	// 2. Prepare mock Kite data
 	mockData := &mockKiteClient{
 		holdings: kiteconnect.Holdings{
 			{
@@ -68,19 +80,16 @@ func TestPortfolioSyncAndRetrieval(t *testing.T) {
 				DayChange:           20.0,
 				DayChangePercentage: 1.35,
 			},
+		},
+		mf: kiteconnect.MFHoldings{
 			{
-				Tradingsymbol:       "RELIANCE",
-				Exchange:            "NSE",
-				InstrumentToken:     738561,
-				ISIN:                "INE002A01018",
-				Product:             "CNC",
-				Quantity:            5,
-				AveragePrice:        2400.0,
-				LastPrice:           2600.0,
-				ClosePrice:          2550.0,
-				PnL:                 1000.0,
-				DayChange:           50.0,
-				DayChangePercentage: 1.96,
+				Folio:         "12345/67",
+				Fund:          "Parag Parikh Flexi Cap Fund",
+				Tradingsymbol: "INF209K01168",
+				AveragePrice:  50.0,
+				LastPrice:     65.0,
+				Quantity:      200.0,
+				Pnl:           3000.0,
 			},
 		},
 	}
@@ -97,54 +106,46 @@ func TestPortfolioSyncAndRetrieval(t *testing.T) {
 		t.Fatalf("portfolio sync failed: %v", err)
 	}
 
-	// Holdings investment: 10*1400 + 5*2400 = 14000 + 12000 = 26000
-	if res.Summary.TotalInvestment != 26000.0 {
-		t.Errorf("expected total investment 26000.0, got %f", res.Summary.TotalInvestment)
+	// Verify single call per endpoint, no retries
+	if mockData.holdingsCalls != 1 || mockData.mfCalls != 1 {
+		t.Errorf("expected exactly 1 call per endpoint without retry, got holdings=%d mf=%d", mockData.holdingsCalls, mockData.mfCalls)
 	}
 
-	// Holdings current: 10*1500 + 5*2600 = 15000 + 13000 = 28000
+	// Equity: 10 * 1400 = 14,000, MF: 200 * 50 = 10,000. Total = 24,000
+	if res.Summary.TotalInvestment != 24000.0 {
+		t.Errorf("expected total investment 24000.0, got %f", res.Summary.TotalInvestment)
+	}
+	// Equity: 10 * 1500 = 15,000, MF: 200 * 65 = 13,000. Total = 28,000
 	if res.Summary.CurrentValue != 28000.0 {
 		t.Errorf("expected current value 28000.0, got %f", res.Summary.CurrentValue)
 	}
-
-	// Total PnL: 1000 + 1000 = 2000
-	if res.Summary.TotalPnL != 2000.0 {
-		t.Errorf("expected total PnL 2000.0, got %f", res.Summary.TotalPnL)
+	// Total PnL: 1000 + 3000 = 4000
+	if res.Summary.TotalPnL != 4000.0 {
+		t.Errorf("expected total PnL 4000.0, got %f", res.Summary.TotalPnL)
 	}
 
-	// Total PnL percentage: (2000 / 26000) * 100 = 7.69%
-	if res.Summary.TotalPnLPercentage != 7.69 {
-		t.Errorf("expected total PnL percentage 7.69, got %f", res.Summary.TotalPnLPercentage)
+	if len(res.EquityHoldings) != 1 || len(res.MFHoldings) != 1 {
+		t.Errorf("expected 1 equity holding and 1 mf holding, got eq=%d mf=%d", len(res.EquityHoldings), len(res.MFHoldings))
 	}
 
-	if len(res.Holdings) != 2 {
-		t.Errorf("expected 2 holdings, got %d", len(res.Holdings))
-	}
-
-	// 4. Test GetPortfolio retrieval from DB
-	cached, err := service.GetPortfolio(ctx, user.ID)
+	// 4. Verify successful snapshot in DB
+	snapshots, err := service.GetHistory(ctx, user.ID, 10)
 	if err != nil {
-		t.Fatalf("failed to retrieve stored portfolio: %v", err)
+		t.Fatalf("failed to get history: %v", err)
 	}
-	if cached.Summary.CurrentValue != 28000.0 {
-		t.Errorf("expected cached current value 28000.0, got %f", cached.Summary.CurrentValue)
+	if len(snapshots) != 1 {
+		t.Fatalf("expected 1 snapshot, got %d", len(snapshots))
 	}
-
-	// 5. Test GetHistory snapshot retrieval
-	history, err := service.GetHistory(ctx, user.ID, 30)
-	if err != nil {
-		t.Fatalf("failed to retrieve history: %v", err)
+	if snapshots[0].Status != "success" {
+		t.Errorf("expected status 'success', got %s", snapshots[0].Status)
 	}
-	if len(history) != 1 {
-		t.Fatalf("expected 1 historical snapshot, got %d", len(history))
-	}
-	if history[0].CurrentValue != 28000.0 {
-		t.Errorf("expected history current value 28000.0, got %f", history[0].CurrentValue)
+	if snapshots[0].CurrentValue != 28000.0 {
+		t.Errorf("expected snapshot value 28000.0, got %f", snapshots[0].CurrentValue)
 	}
 }
 
-func TestPortfolioSyncNoSession(t *testing.T) {
-	tempDB := filepath.Join(t.TempDir(), "test_nosession.db")
+func TestPortfolioSyncFailureSavesFailedSnapshotNoRetry(t *testing.T) {
+	tempDB := filepath.Join(t.TempDir(), "test_fail.db")
 	db, err := database.Open(tempDB)
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
@@ -152,10 +153,69 @@ func TestPortfolioSyncNoSession(t *testing.T) {
 	defer db.Close()
 
 	queries := store.New(db)
-	service := NewService(db, queries, "dummy-key", nil)
+	ctx := context.Background()
 
-	_, err = service.Sync(context.Background(), 9999)
+	user, err := queries.UpsertUser(ctx, store.UpsertUserParams{
+		KiteID:   "FAIL01",
+		UserName: "Fail User",
+		Email:    "fail@example.com",
+	})
+	if err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	_, err = queries.UpsertKiteSession(ctx, store.UpsertKiteSessionParams{
+		UserID:      user.ID,
+		AccessToken: "mock-access-token",
+		PublicToken: "mock-public-token",
+		LoginTime:   time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	// Equity succeeds, but Mutual Funds fails
+	mockData := &mockKiteClient{
+		holdings: kiteconnect.Holdings{
+			{
+				Tradingsymbol: "INFY",
+				Quantity:      10,
+				AveragePrice:  1400.0,
+				LastPrice:     1500.0,
+			},
+		},
+		mfErr: errors.New("503 Service Unavailable"),
+	}
+
+	factory := func(apiKey, accessToken string) KiteClient {
+		return mockData
+	}
+
+	service := NewService(db, queries, "dummy-key", factory)
+
+	// Run Sync
+	_, err = service.Sync(ctx, user.ID)
 	if err == nil {
-		t.Fatal("expected error when syncing non-existent user/session, got nil")
+		t.Fatal("expected sync to return error when mutual funds call fails")
+	}
+
+	// Verify no retry was performed
+	if mockData.mfCalls != 1 {
+		t.Errorf("expected exactly 1 call without retry, got %d", mockData.mfCalls)
+	}
+
+	// Verify failed snapshot was recorded
+	snapshots, err := service.GetHistory(ctx, user.ID, 10)
+	if err != nil {
+		t.Fatalf("failed to get history: %v", err)
+	}
+	if len(snapshots) != 1 {
+		t.Fatalf("expected 1 failed snapshot saved, got %d", len(snapshots))
+	}
+	if snapshots[0].Status != "failed" {
+		t.Errorf("expected snapshot status 'failed', got %s", snapshots[0].Status)
+	}
+	if snapshots[0].ErrorMessage == "" {
+		t.Error("expected error message in failed snapshot, got empty")
 	}
 }

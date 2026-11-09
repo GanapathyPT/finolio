@@ -43,15 +43,38 @@ type KiteSession struct {
 	CreatedAt   time.Time `db:"created_at" json:"created_at"`
 }
 
+type MfHolding struct {
+	ID            int64     `db:"id" json:"id"`
+	UserID        int64     `db:"user_id" json:"user_id"`
+	Folio         string    `db:"folio" json:"folio"`
+	Fund          string    `db:"fund" json:"fund"`
+	Tradingsymbol string    `db:"tradingsymbol" json:"tradingsymbol"`
+	AveragePrice  float64   `db:"average_price" json:"average_price"`
+	LastPrice     float64   `db:"last_price" json:"last_price"`
+	LastPriceDate string    `db:"last_price_date" json:"last_price_date"`
+	Pnl           float64   `db:"pnl" json:"pnl"`
+	Quantity      float64   `db:"quantity" json:"quantity"`
+	SyncedAt      time.Time `db:"synced_at" json:"synced_at"`
+}
+
 type PortfolioSnapshot struct {
 	ID                 int64     `db:"id" json:"id"`
 	UserID             int64     `db:"user_id" json:"user_id"`
+	Status             string    `db:"status" json:"status"`
+	ErrorMessage       string    `db:"error_message" json:"error_message"`
+	EquityInvestment   float64   `db:"equity_investment" json:"equity_investment"`
+	EquityCurrentValue float64   `db:"equity_current_value" json:"equity_current_value"`
+	EquityPnl          float64   `db:"equity_pnl" json:"equity_pnl"`
+	EquityCount        int64     `db:"equity_count" json:"equity_count"`
+	MfInvestment       float64   `db:"mf_investment" json:"mf_investment"`
+	MfCurrentValue     float64   `db:"mf_current_value" json:"mf_current_value"`
+	MfPnl              float64   `db:"mf_pnl" json:"mf_pnl"`
+	MfCount            int64     `db:"mf_count" json:"mf_count"`
 	TotalInvestment    float64   `db:"total_investment" json:"total_investment"`
 	CurrentValue       float64   `db:"current_value" json:"current_value"`
 	TotalPnl           float64   `db:"total_pnl" json:"total_pnl"`
 	TotalPnlPercentage float64   `db:"total_pnl_percentage" json:"total_pnl_percentage"`
 	DayPnl             float64   `db:"day_pnl" json:"day_pnl"`
-	HoldingsCount      int64     `db:"holdings_count" json:"holdings_count"`
 	SnapshotDate       string    `db:"snapshot_date" json:"snapshot_date"`
 	CreatedAt          time.Time `db:"created_at" json:"created_at"`
 }

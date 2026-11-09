@@ -4,10 +4,11 @@ import (
 	kiteconnect "github.com/zerodha/gokiteconnect/v4"
 )
 
-// KiteClient defines the subset of Kite Connect API methods required for holdings operations.
+// KiteClient defines the subset of Kite Connect API methods required for portfolio operations.
 // This interface allows seamless mocking in tests without making network requests.
 type KiteClient interface {
 	GetHoldings() (kiteconnect.Holdings, error)
+	GetMFHoldings() (kiteconnect.MFHoldings, error)
 }
 
 // defaultKiteClient wraps a real *kiteconnect.Client.
@@ -17,6 +18,10 @@ type defaultKiteClient struct {
 
 func (d *defaultKiteClient) GetHoldings() (kiteconnect.Holdings, error) {
 	return d.client.GetHoldings()
+}
+
+func (d *defaultKiteClient) GetMFHoldings() (kiteconnect.MFHoldings, error) {
+	return d.client.GetMFHoldings()
 }
 
 // ClientFactoryFunc is a constructor function that produces a KiteClient.
