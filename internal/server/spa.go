@@ -48,4 +48,3 @@ func spaHandler(staticDir string) http.HandlerFunc {
 		http.NotFound(w, r)
 	}
 }
-

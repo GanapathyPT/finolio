@@ -43,7 +43,7 @@ func TestServerSPARoutes(t *testing.T) {
 		KiteAPISecret:    "secret",
 	}
 
-	s := New(cfg, nil)
+	s := New(cfg, nil, nil)
 
 	// Test 1: Root "/" serves index.html
 	reqRoot := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -118,4 +118,3 @@ func TestServerSPARoutes(t *testing.T) {
 		t.Errorf("expected application/manifest+json, got %q", recManifest.Header().Get("Content-Type"))
 	}
 }
-

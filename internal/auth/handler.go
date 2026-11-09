@@ -33,9 +33,22 @@ import (
 )
 
 const (
-	sessionCookieName  = "finolio_session"
-	redirectCookieName = "finolio_auth_redirect"
+	SessionCookieName  = "finolio_session"
+	RedirectCookieName = "finolio_auth_redirect"
 )
+
+// GetUserID extracts and parses the authenticated user ID from the session cookie.
+func GetUserID(r *http.Request) (int64, error) {
+	cookie, err := r.Cookie(SessionCookieName)
+	if err != nil || cookie.Value == "" {
+		return 0, errors.New("unauthorized: missing session")
+	}
+	userID, err := strconv.ParseInt(cookie.Value, 10, 64)
+	if err != nil {
+		return 0, errors.New("unauthorized: invalid session")
+	}
+	return userID, nil
+}
 
 // Handler holds the Kite client and handles all auth HTTP routes.
 type Handler struct {
@@ -73,7 +86,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 	if redirectTo != "" && isValidRedirectURL(redirectTo) {
 		http.SetCookie(w, &http.Cookie{
-			Name:     redirectCookieName,
+			Name:     RedirectCookieName,
 			Value:    redirectTo,
 			Path:     "/",
 			HttpOnly: true,
@@ -151,7 +164,7 @@ func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
 
 	// Set HTTP-only session cookie with the user ID.
 	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
+		Name:     SessionCookieName,
 		Value:    strconv.FormatInt(user.ID, 10),
 		Path:     "/",
 		HttpOnly: true,
@@ -166,14 +179,14 @@ func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
 	// 3. Fallback to "/"
 	redirectTo := r.URL.Query().Get("redirect_to")
 	if redirectTo == "" || !isValidRedirectURL(redirectTo) {
-		if cookie, err := r.Cookie(redirectCookieName); err == nil && cookie.Value != "" && isValidRedirectURL(cookie.Value) {
+		if cookie, err := r.Cookie(RedirectCookieName); err == nil && cookie.Value != "" && isValidRedirectURL(cookie.Value) {
 			redirectTo = cookie.Value
 		}
 	}
 
 	// Always clear the temporary redirect cookie.
 	http.SetCookie(w, &http.Cookie{
-		Name:     redirectCookieName,
+		Name:     RedirectCookieName,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
@@ -209,17 +222,8 @@ func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
 //
 //	GET /api/auth/me
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil || cookie.Value == "" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		fmt.Fprintln(w, `{"authenticated":false}`)
-		return
-	}
-
-	userID, err := strconv.ParseInt(cookie.Value, 10, 64)
+	userID, err := GetUserID(r)
 	if err != nil {
-		h.clearCookie(w)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		fmt.Fprintln(w, `{"authenticated":false}`)
@@ -259,32 +263,30 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 //
 //	POST /api/auth/logout
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
-	if cookie, err := r.Cookie(sessionCookieName); err == nil && cookie.Value != "" {
-		if userID, err := strconv.ParseInt(cookie.Value, 10, 64); err == nil && h.queries != nil {
-			// Fetch the user's active Kite session to invalidate the token on Kite's server
-			kiteSession, err := h.queries.GetKiteSessionByUserID(r.Context(), userID)
-			if err == nil && kiteSession.AccessToken != "" {
-				kc := kiteconnect.New(h.apiKey)
-				kc.SetAccessToken(kiteSession.AccessToken)
-				if _, err := kc.InvalidateAccessToken(); err != nil {
-					slog.Warn("failed to invalidate access token on kite servers",
-						"user_id", userID,
-						"error", err,
-					)
-				} else {
-					slog.Info("successfully invalidated access token on kite servers",
-						"user_id", userID,
-					)
-				}
-			}
-
-			// Delete local database session
-			if err := h.queries.DeleteKiteSession(r.Context(), userID); err != nil {
-				slog.Error("failed to delete kite session from database",
+	if userID, err := GetUserID(r); err == nil && h.queries != nil {
+		// Fetch the user's active Kite session to invalidate the token on Kite's server
+		kiteSession, err := h.queries.GetKiteSessionByUserID(r.Context(), userID)
+		if err == nil && kiteSession.AccessToken != "" {
+			kc := kiteconnect.New(h.apiKey)
+			kc.SetAccessToken(kiteSession.AccessToken)
+			if _, err := kc.InvalidateAccessToken(); err != nil {
+				slog.Warn("failed to invalidate access token on kite servers",
 					"user_id", userID,
 					"error", err,
 				)
+			} else {
+				slog.Info("successfully invalidated access token on kite servers",
+					"user_id", userID,
+				)
 			}
+		}
+
+		// Delete local database session
+		if err := h.queries.DeleteKiteSession(r.Context(), userID); err != nil {
+			slog.Error("failed to delete kite session from database",
+				"user_id", userID,
+				"error", err,
+			)
 		}
 	}
 
@@ -296,7 +298,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) clearCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
+		Name:     SessionCookieName,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,

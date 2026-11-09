@@ -1,10 +1,14 @@
+import { useState } from 'react'
 import {
-  User,
-  KeyRound,
-  Mail,
-  ShieldCheck,
-  XCircle,
-  BarChart3,
+  RefreshCw,
+  TrendingUp,
+  TrendingDown,
+  Wallet,
+  AlertCircle,
+  Clock,
+  Layers,
+  ArrowUpRight,
+  ArrowDownRight,
 } from 'lucide-react'
 import {
   Card,
@@ -14,120 +18,279 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
+import { Button } from '@/components/ui/button'
 import { Header } from '@/components/Header'
 import { useAuth } from '@/hooks/useAuth'
+import { usePortfolio } from '@/hooks/usePortfolio'
+
+function formatINR(val: number): string {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 2,
+  }).format(val)
+}
+
+function formatPercent(val: number): string {
+  const sign = val > 0 ? '+' : ''
+  return `${sign}${val.toFixed(2)}%`
+}
 
 export function DashboardPage() {
   const { auth } = useAuth()
-  const user = auth.user
+  const { portfolio, isLoading, isSyncing, sync, syncError } = usePortfolio()
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
+  const user = auth.user
   if (!user) {
     return null
   }
+
+  const handleSync = async () => {
+    setErrorMessage(null)
+    try {
+      await sync()
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setErrorMessage(err.message)
+      } else {
+        setErrorMessage('Failed to sync holdings')
+      }
+    }
+  }
+
+  const summary = portfolio?.summary
+  const holdings = portfolio?.holdings || []
+  const hasHoldings = holdings.length > 0
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <Header />
 
       <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full space-y-8">
-        {/* Welcome Section */}
-        <div className="space-y-1">
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-            Welcome back, {user.user_name}
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            Your Kite Connect integration is active. View your account overview and session telemetry below.
-          </p>
+        {/* Top Header / Actions */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="space-y-1">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
+              Holdings & Portfolio
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              Track your long-term equity holdings and capital compounding from Zerodha Kite.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {summary?.last_synced_at && (
+              <span className="hidden md:inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Clock className="h-3.5 w-3.5" />
+                Synced {new Date(summary.last_synced_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+            <Button
+              onClick={handleSync}
+              disabled={isSyncing}
+              size="sm"
+              className="gap-2 font-medium"
+            >
+              <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+              {isSyncing ? 'Syncing...' : 'Sync Holdings'}
+            </Button>
+          </div>
         </div>
 
-        {/* Dashboard Cards Grid */}
-        <div className="grid gap-6 md:grid-cols-2">
-          {/* Account Details Card */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base font-semibold">Account Details</CardTitle>
-                <User className="h-4 w-4 text-muted-foreground" />
-              </div>
-              <CardDescription>Zerodha broker profile information</CardDescription>
-            </CardHeader>
-            <Separator />
-            <CardContent className="pt-4 space-y-3.5">
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2 text-muted-foreground">
-                  <User className="h-4 w-4" /> Name
-                </span>
-                <span className="font-medium">{user.user_name}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2 text-muted-foreground">
-                  <KeyRound className="h-4 w-4" /> Kite User ID
-                </span>
-                <Badge variant="outline" className="font-mono">{user.kite_id}</Badge>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2 text-muted-foreground">
-                  <Mail className="h-4 w-4" /> Email Address
-                </span>
-                <span className="font-medium">{user.email}</span>
-              </div>
-            </CardContent>
-          </Card>
+        {/* Sync error alert */}
+        {(errorMessage || syncError) && (
+          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <p>{errorMessage || (syncError instanceof Error ? syncError.message : 'Failed to sync with Kite')}</p>
+          </div>
+        )}
 
-          {/* Session Status Card */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base font-semibold">Session Status</CardTitle>
-                <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-              </div>
-              <CardDescription>Authentication and Kite token telemetry</CardDescription>
-            </CardHeader>
-            <Separator />
-            <CardContent className="pt-4 space-y-3.5">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Broker Connection</span>
-                <span className="font-medium">Zerodha Kite</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Kite Session</span>
-                {auth.hasKiteSession ? (
-                  <Badge variant="default" className="gap-1.5 bg-emerald-600 hover:bg-emerald-600">
-                    <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
-                    Active Session
-                  </Badge>
+        {/* Portfolio Summary Cards */}
+        {summary && hasHoldings && (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {/* Current Value */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Current Holdings Value
+                </CardTitle>
+                <Wallet className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="space-y-1">
+                <div className="text-2xl font-bold tracking-tight">
+                  {formatINR(summary.current_value)}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Invested: <span className="font-medium text-foreground">{formatINR(summary.total_investment)}</span> ({summary.holdings_count} stocks)
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Total P&L */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Total Profit & Loss
+                </CardTitle>
+                {summary.total_pnl >= 0 ? (
+                  <TrendingUp className="h-4 w-4 text-emerald-500" />
                 ) : (
-                  <Badge variant="outline" className="gap-1.5 text-amber-500 border-amber-500/30">
-                    <XCircle className="h-3 w-3" />
-                    Inactive
-                  </Badge>
+                  <TrendingDown className="h-4 w-4 text-rose-500" />
                 )}
+              </CardHeader>
+              <CardContent className="space-y-1">
+                <div className={`text-2xl font-bold tracking-tight ${summary.total_pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                  {formatINR(summary.total_pnl)}
+                </div>
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className={`inline-flex items-center font-medium ${summary.total_pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                    {summary.total_pnl >= 0 ? (
+                      <ArrowUpRight className="h-3.5 w-3.5" />
+                    ) : (
+                      <ArrowDownRight className="h-3.5 w-3.5" />
+                    )}
+                    {formatPercent(summary.total_pnl_percentage)}
+                  </span>
+                  <span className="text-muted-foreground">all-time returns</span>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Day's P&L */}
+            <Card className="sm:col-span-2 lg:col-span-1">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Today's Change
+                </CardTitle>
+                <Clock className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="space-y-1">
+                <div className={`text-2xl font-bold tracking-tight ${summary.day_pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                  {formatINR(summary.day_pnl)}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Unrealized market move today
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Holdings Table */}
+        {hasHoldings ? (
+          <Card>
+            <CardHeader className="pb-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-lg font-semibold">Holdings</CardTitle>
+                  <CardDescription>
+                    All active delivery equity shares stored in your Zerodha Demat account.
+                  </CardDescription>
+                </div>
+                <Badge variant="secondary" className="font-mono text-xs">
+                  {holdings.length} {holdings.length === 1 ? 'Asset' : 'Assets'}
+                </Badge>
               </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Token Lifetime</span>
-                <span className="font-medium text-xs font-mono">Daily (Expires 06:00 IST)</span>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left border-collapse">
+                  <thead>
+                    <tr className="border-t border-b bg-muted/40 text-xs text-muted-foreground font-medium uppercase tracking-wider">
+                      <th className="py-3 px-4">Instrument</th>
+                      <th className="py-3 px-4 text-right">Qty</th>
+                      <th className="py-3 px-4 text-right">Avg. Price</th>
+                      <th className="py-3 px-4 text-right">LTP</th>
+                      <th className="py-3 px-4 text-right">Cur. Value</th>
+                      <th className="py-3 px-4 text-right">P&L</th>
+                      <th className="py-3 px-4 text-right">Day Chg</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {holdings.map((h) => {
+                      const curValue = h.quantity * h.last_price
+                      const isProfit = h.pnl >= 0
+                      const isDayPositive = h.day_change >= 0
+
+                      return (
+                        <tr key={h.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="py-3.5 px-4 font-medium">
+                            <div className="flex flex-col">
+                              <span className="font-semibold text-foreground tracking-tight">
+                                {h.tradingsymbol}
+                              </span>
+                              <span className="text-xs text-muted-foreground font-mono">
+                                {h.exchange} • {h.isin}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 text-right font-mono">
+                            {h.quantity}
+                            {h.t1_quantity > 0 && (
+                              <span className="text-xs text-muted-foreground block">
+                                (+{h.t1_quantity} T1)
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 text-right font-mono text-muted-foreground">
+                            {formatINR(h.average_price)}
+                          </td>
+                          <td className="py-3.5 px-4 text-right font-mono font-medium">
+                            {formatINR(h.last_price)}
+                          </td>
+                          <td className="py-3.5 px-4 text-right font-mono font-medium">
+                            {formatINR(curValue)}
+                          </td>
+                          <td className={`py-3.5 px-4 text-right font-mono font-medium ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
+                            <div>{formatINR(h.pnl)}</div>
+                            <div className="text-xs opacity-80">
+                              {h.average_price > 0
+                                ? formatPercent(((h.last_price - h.average_price) / h.average_price) * 100)
+                                : '0.00%'}
+                            </div>
+                          </td>
+                          <td className={`py-3.5 px-4 text-right font-mono text-xs font-medium ${isDayPositive ? 'text-emerald-500' : 'text-rose-500'}`}>
+                            {formatPercent(h.day_change_percentage)}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
             </CardContent>
           </Card>
-        </div>
-
-        {/* Portfolio Placeholder Card */}
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-12 text-center space-y-4">
-            <div className="p-3 rounded-full bg-primary/10 text-primary">
-              <BarChart3 className="h-6 w-6" />
-            </div>
-            <div className="space-y-1 max-w-md">
-              <h3 className="font-semibold text-lg">Portfolio & Analytics Coming Next</h3>
-              <p className="text-sm text-muted-foreground">
-                Holdings, orders, positions, and visual P&L analytics will be displayed here directly from your Zerodha Kite account.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        ) : !isLoading ? (
+          /* Empty State */
+          <Card className="border-dashed">
+            <CardContent className="flex flex-col items-center justify-center py-16 text-center space-y-4">
+              <div className="p-4 rounded-full bg-primary/10 text-primary">
+                <Layers className="h-8 w-8" />
+              </div>
+              <div className="space-y-1.5 max-w-md">
+                <h3 className="font-semibold text-lg">No Holdings Recorded Yet</h3>
+                <p className="text-sm text-muted-foreground">
+                  Click the button below to fetch and store your equity holdings directly from your connected Zerodha Kite account.
+                </p>
+              </div>
+              <Button
+                onClick={handleSync}
+                disabled={isSyncing}
+                className="gap-2 shadow-sm"
+              >
+                <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                {isSyncing ? 'Syncing from Kite...' : 'Sync Holdings Now'}
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="py-12 flex justify-center text-sm text-muted-foreground">
+            <RefreshCw className="h-5 w-5 animate-spin mr-2" />
+            Loading portfolio data...
+          </div>
+        )}
       </main>
     </div>
   )
 }
-

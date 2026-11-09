@@ -32,7 +32,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	queries := store.New(db)
 
 	// -- HTTP server ---------------------------------------------------------
-	srv := server.New(cfg, queries)
+	srv := server.New(cfg, db, queries)
 
 	errCh := make(chan error, 1)
 	go func() {

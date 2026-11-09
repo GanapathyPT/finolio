@@ -59,7 +59,7 @@ func TestLoginRedirectCookie(t *testing.T) {
 	cookies := res.Cookies()
 	var redirectCookie *http.Cookie
 	for _, c := range cookies {
-		if c.Name == redirectCookieName {
+		if c.Name == RedirectCookieName {
 			redirectCookie = c
 			break
 		}
@@ -94,7 +94,7 @@ func TestLogoutClearsCookie(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
 	req.AddCookie(&http.Cookie{
-		Name:  sessionCookieName,
+		Name:  SessionCookieName,
 		Value: "1",
 	})
 	rec := httptest.NewRecorder()
@@ -112,7 +112,7 @@ func TestLogoutClearsCookie(t *testing.T) {
 	cookies := res.Cookies()
 	var sessionCookie *http.Cookie
 	for _, c := range cookies {
-		if c.Name == sessionCookieName {
+		if c.Name == SessionCookieName {
 			sessionCookie = c
 			break
 		}
@@ -126,4 +126,3 @@ func TestLogoutClearsCookie(t *testing.T) {
 		t.Errorf("expected session cookie MaxAge < 0, got %d", sessionCookie.MaxAge)
 	}
 }
-

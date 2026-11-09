@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/ganapathypt/finolio/internal/auth"
 	"github.com/ganapathypt/finolio/internal/config"
+	"github.com/ganapathypt/finolio/internal/portfolio"
 	"github.com/ganapathypt/finolio/internal/store"
 )
 
@@ -25,7 +27,7 @@ type Server struct {
 }
 
 // New constructs a Server with all routes registered.
-func New(cfg *config.Config, queries *store.Queries) *Server {
+func New(cfg *config.Config, db *sql.DB, queries *store.Queries) *Server {
 	r := chi.NewRouter()
 
 	// -- Global middleware ---------------------------------------------------
@@ -40,6 +42,12 @@ func New(cfg *config.Config, queries *store.Queries) *Server {
 	// -- Routes --------------------------------------------------------------
 	// All application routes live under /api.
 	authHandler := auth.NewHandler(cfg, queries)
+	var portfolioHandler *portfolio.Handler
+	if db != nil && queries != nil {
+		portfolioService := portfolio.NewService(db, queries, cfg.KiteAPIKey, nil)
+		portfolioHandler = portfolio.NewHandler(portfolioService)
+	}
+
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/healthz", s.handleHealth)
 
@@ -50,6 +58,15 @@ func New(cfg *config.Config, queries *store.Queries) *Server {
 			r.Get("/me", authHandler.Me)
 			r.Post("/logout", authHandler.Logout)
 		})
+
+		// Portfolio
+		if portfolioHandler != nil {
+			r.Route("/portfolio", func(r chi.Router) {
+				r.Post("/sync", portfolioHandler.Sync)
+				r.Get("/", portfolioHandler.GetPortfolio)
+				r.Get("/history", portfolioHandler.GetHistory)
+			})
+		}
 	})
 
 	// -- Static files / SPA --------------------------------------------------
