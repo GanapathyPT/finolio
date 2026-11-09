@@ -1,6 +1,7 @@
-import { TrendingUp, User, LogOut } from 'lucide-react'
+import { User, LogOut } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Logo } from '@/components/Logo'
 import { useAuth } from '@/hooks/useAuth'
 
 export function Header() {
@@ -14,11 +15,8 @@ export function Header() {
     <header className="border-b bg-card/60 backdrop-blur-md sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="p-2 rounded-lg bg-primary/10 text-primary">
-            <TrendingUp className="h-5 w-5" />
-          </div>
-          <span className="font-semibold text-lg tracking-tight">Finolio</span>
-          <Badge variant="secondary" className="text-xs font-mono ml-2">
+          <Logo size={28} showText />
+          <Badge variant="secondary" className="text-xs font-mono ml-1">
             Zerodha Kite
           </Badge>
         </div>

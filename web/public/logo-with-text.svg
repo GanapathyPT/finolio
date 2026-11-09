@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64" fill="none">
+  <defs>
+    <linearGradient id="finolio-full-grad" x1="12" y1="52" x2="52" y2="12" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="55%" stop-color="#06B6D4" />
+      <stop offset="100%" stop-color="#38BDF8" />
+    </linearGradient>
+    <linearGradient id="finolio-full-base" x1="12" y1="52" x2="36" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10B981" stop-opacity="0.5" />
+      <stop offset="100%" stop-color="#06B6D4" stop-opacity="0.25" />
+    </linearGradient>
+  </defs>
+
+  <!-- Ground foundation: Capital discipline & security -->
+  <path
+    d="M12 44C19 48 31 48 48 42"
+    stroke="url(#finolio-full-base)"
+    stroke-width="4.5"
+    stroke-linecap="round"
+  />
+
+  <!-- The Unlocked Loop: Breaking the cycle -->
+  <path
+    d="M16 36C13 25 21 11 41 14"
+    stroke="url(#finolio-full-grad)"
+    stroke-width="5"
+    stroke-linecap="round"
+  />
+
+  <!-- The Escape Velocity: Compounding trajectory & ascending 'F' wing -->
+  <path
+    d="M22 38L48 12M48 12H34M48 12V26"
+    stroke="url(#finolio-full-grad)"
+    stroke-width="5.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Destination Sovereign Star -->
+  <circle cx="48" cy="12" r="3.5" fill="#38BDF8" />
+
+  <!-- Wordmark -->
+  <text x="72" y="41" fill="#F8FAFC" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="28" font-weight="700" letter-spacing="-0.03em">Finolio</text>
+</svg>
+

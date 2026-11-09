@@ -1,4 +1,4 @@
-import { TrendingUp, CheckCircle2, ExternalLink } from 'lucide-react'
+import { CheckCircle2, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -7,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { Logo } from '@/components/Logo'
 import { useAuth } from '@/hooks/useAuth'
 
 export function LoginPage() {
@@ -16,8 +17,8 @@ export function LoginPage() {
     <div className="min-h-screen bg-background text-foreground flex flex-col justify-center items-center p-4">
       <Card className="w-full max-w-md shadow-2xl border bg-card">
         <CardHeader className="text-center space-y-2 p-6 pb-4">
-          <div className="mx-auto p-3.5 w-fit rounded-2xl bg-primary/10 text-primary border border-primary/20">
-            <TrendingUp className="h-8 w-8" />
+          <div className="mx-auto p-3.5 w-fit rounded-2xl bg-muted/40 border border-border/50 shadow-inner">
+            <Logo size={44} />
           </div>
           <CardTitle className="text-2xl font-bold tracking-tight">Finolio</CardTitle>
           <CardDescription className="text-sm text-muted-foreground">

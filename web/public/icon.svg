@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="finolio-app-grad" x1="24" y1="104" x2="104" y2="24" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="55%" stop-color="#06B6D4" />
+      <stop offset="100%" stop-color="#38BDF8" />
+    </linearGradient>
+    <linearGradient id="finolio-app-base" x1="24" y1="104" x2="72" y2="88" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10B981" stop-opacity="0.5" />
+      <stop offset="100%" stop-color="#06B6D4" stop-opacity="0.25" />
+    </linearGradient>
+    <radialGradient id="finolio-app-bg" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </radialGradient>
+  </defs>
+
+  <!-- App icon rounded surface -->
+  <rect width="128" height="128" rx="28" fill="url(#finolio-app-bg)" stroke="#1E293B" stroke-width="2" />
+
+  <!-- Ground foundation: Capital discipline & security -->
+  <path
+    d="M24 88C38 96 62 96 96 84"
+    stroke="url(#finolio-app-base)"
+    stroke-width="9"
+    stroke-linecap="round"
+  />
+
+  <!-- The Unlocked Loop: Breaking the cycle -->
+  <path
+    d="M32 72C26 50 42 22 82 28"
+    stroke="url(#finolio-app-grad)"
+    stroke-width="10"
+    stroke-linecap="round"
+  />
+
+  <!-- The Escape Velocity: Compounding trajectory & ascending 'F' wing -->
+  <path
+    d="M44 76L96 24M96 24H68M96 24V52"
+    stroke="url(#finolio-app-grad)"
+    stroke-width="11"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Destination Sovereign Star -->
+  <circle cx="96" cy="24" r="7" fill="#38BDF8" />
+</svg>
+

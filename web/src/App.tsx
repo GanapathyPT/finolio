@@ -1,6 +1,6 @@
-import { TrendingUp } from 'lucide-react'
 import { AuthProvider } from '@/context/AuthContext'
 import { useAuth } from '@/hooks/useAuth'
+import { Logo } from '@/components/Logo'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { LoginPage } from '@/pages/LoginPage'
 
@@ -11,7 +11,7 @@ function AppContent() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
-          <TrendingUp className="h-8 w-8 animate-pulse text-primary" />
+          <Logo size={40} className="animate-pulse" />
           <p className="text-sm text-muted-foreground font-medium">Loading Finolio...</p>
         </div>
       </div>
