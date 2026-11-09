@@ -1,0 +1,44 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: finolio-backend:latest
+    container_name: finolio-backend
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+    environment:
+      - APP_ENV=${APP_ENV:-development}
+      - HTTP_HOST=0.0.0.0
+      - HTTP_PORT=8080
+      - DB_FILE=/data/finolio.db
+      - KITE_API_KEY=${KITE_API_KEY:-your_kite_api_key}
+      - KITE_API_SECRET=${KITE_API_SECRET:-your_kite_api_secret}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - finolio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/api/healthz > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  frontend:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    image: finolio-frontend:latest
+    container_name: finolio-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  finolio_data:
+    name: finolio_data
+
