@@ -101,5 +101,21 @@ func TestServerSPARoutes(t *testing.T) {
 	if !strings.Contains(recAPI.Body.String(), `"status":"ok"`) {
 		t.Errorf("expected json health response, got %q", recAPI.Body.String())
 	}
+
+	// Test 6: PWA manifest "/manifest.webmanifest" serves application/manifest+json
+	manifestContent := `{"name":"Finolio"}`
+	if err := os.WriteFile(filepath.Join(tempDir, "manifest.webmanifest"), []byte(manifestContent), 0644); err != nil {
+		t.Fatalf("failed to create manifest: %v", err)
+	}
+	reqManifest := httptest.NewRequest(http.MethodGet, "/manifest.webmanifest", nil)
+	recManifest := httptest.NewRecorder()
+	s.http.Handler.ServeHTTP(recManifest, reqManifest)
+
+	if recManifest.Code != http.StatusOK {
+		t.Errorf("expected status 200 for manifest, got %d", recManifest.Code)
+	}
+	if !strings.Contains(recManifest.Header().Get("Content-Type"), "application/manifest+json") {
+		t.Errorf("expected application/manifest+json, got %q", recManifest.Header().Get("Content-Type"))
+	}
 }
 

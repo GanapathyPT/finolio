@@ -1,12 +1,17 @@
 package server
 
 import (
+	"mime"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 )
+
+func init() {
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
+}
 
 // spaHandler serves static files from staticDir and falls back to index.html for SPA routes.
 func spaHandler(staticDir string) http.HandlerFunc {
