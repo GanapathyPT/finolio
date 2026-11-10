@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -11,7 +11,6 @@ import {
 } from '@dnd-kit/core'
 import {
   RefreshCw,
-  AlertCircle,
   Clock,
   Plus,
   Layers,
@@ -22,6 +21,7 @@ import { Header } from '@/components/Header'
 import { useAuth } from '@/hooks/useAuth'
 import { usePortfolio } from '@/hooks/usePortfolio'
 import { useGoals } from '@/hooks/useGoals'
+import { useToast } from '@/hooks/useToast'
 import { UnassignedAssetsPanel } from '@/components/goals/UnassignedAssetsPanel'
 import { GoalAccordionItem } from '@/components/goals/GoalAccordionItem'
 import { DraggableAssetItem } from '@/components/goals/DraggableAssetItem'
@@ -47,8 +47,17 @@ export function DashboardPage() {
   const { auth } = useAuth()
   const { portfolio, isLoading: isPortfolioLoading, isSyncing, sync, syncError } = usePortfolio()
   const { goals, isLoading: isGoalsLoading, createGoal, updateGoal, deleteGoal, assignAsset } = useGoals()
+  const { error: showErrorToast } = useToast()
 
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  // Notify on Kite sync error via top-right toast
+  useEffect(() => {
+    if (syncError) {
+      showErrorToast(
+        syncError instanceof Error ? syncError.message : 'Failed to sync with Kite',
+        'Kite Sync Failed'
+      )
+    }
+  }, [syncError, showErrorToast])
 
   // Drag-and-drop active item
   const [activeAsset, setActiveAsset] = useState<UnifiedAsset | null>(null)
@@ -167,22 +176,25 @@ export function DashboardPage() {
 
   const handleSync = async (e?: React.MouseEvent) => {
     e?.preventDefault()
-    setErrorMessage(null)
     try {
       await sync()
     } catch (err: unknown) {
       if (err instanceof Error) {
-        setErrorMessage(err.message)
+        showErrorToast(err.message, 'Sync Failed')
       } else {
-        setErrorMessage('Failed to sync holdings')
+        showErrorToast('Failed to sync holdings', 'Sync Failed')
       }
     }
   }
 
   // Drag handlers
   const handleDragStart = (event: DragStartEvent) => {
-    const asset = event.active.data.current as UnifiedAsset | undefined
-    if (asset) {
+    const rawData = event.active.data.current as
+      | { asset?: UnifiedAsset; sourceGoalId?: number }
+      | UnifiedAsset
+      | undefined
+    if (rawData) {
+      const asset = 'asset' in rawData && rawData.asset ? rawData.asset : (rawData as UnifiedAsset)
       setActiveAsset(asset)
     }
   }
@@ -193,14 +205,28 @@ export function DashboardPage() {
 
     if (!over) return
 
-    const asset = active.data.current as UnifiedAsset | undefined
-    if (!asset) return
+    const rawData = active.data.current as
+      | { asset?: UnifiedAsset; sourceGoalId?: number }
+      | UnifiedAsset
+      | undefined
+    if (!rawData) return
 
+    const asset = 'asset' in rawData && rawData.asset ? rawData.asset : (rawData as UnifiedAsset)
+    const sourceGoalId = 'sourceGoalId' in rawData ? rawData.sourceGoalId : undefined
     const overId = String(over.id)
 
     try {
       if (overId === 'unassigned') {
-        if (asset.allocations.length > 0) {
+        if (sourceGoalId !== undefined) {
+          // Unassign specifically from the goal where it was dragged from
+          await assignAsset({
+            asset_type: asset.asset_type,
+            asset_key: asset.asset_key,
+            goal_id: sourceGoalId,
+            allocation_percentage: 0,
+          })
+        } else if (asset.allocations.length > 0) {
+          // Clear all allocations if dragged from a generic view
           await assignAsset({
             asset_type: asset.asset_type,
             asset_key: asset.asset_key,
@@ -209,28 +235,66 @@ export function DashboardPage() {
         }
       } else if (overId.startsWith('goal-')) {
         const targetGoalId = parseInt(overId.replace('goal-', ''), 10)
-        if (!isNaN(targetGoalId)) {
-          const targetGoal = findGoalInTree(goals, targetGoalId)
-          if (!targetGoal) return
+        if (isNaN(targetGoalId)) return
 
-          const existingAlloc = asset.allocations.find((a) => a.goal_id === targetGoalId)
-          const available = (existingAlloc?.allocation_percentage ?? 0) + asset.unallocated_percentage
-
-          if (available < 10) {
-            setErrorMessage(`Cannot allocate "${asset.title}": 100% is already allocated across other goals. Adjust existing allocations first.`)
-            return
-          }
-
-          setSplitAsset(asset)
-          setSplitGoal(targetGoal)
-          setSplitDialogOpen(true)
+        // If dropped onto the same goal it was dragged from -> no-op
+        if (sourceGoalId !== undefined && sourceGoalId === targetGoalId) {
+          return
         }
+
+        const targetGoal = findGoalInTree(goals, targetGoalId)
+        if (!targetGoal) return
+
+        // Case 1: Direct Goal-to-Goal Transfer (moving asset from Goal A to Goal B)
+        if (sourceGoalId !== undefined && sourceGoalId !== targetGoalId) {
+          const sourceAlloc =
+            asset.allocations.find((a) => a.goal_id === sourceGoalId)?.allocation_percentage ?? 0
+          if (sourceAlloc <= 0) return
+
+          const existingTargetAlloc =
+            asset.allocations.find((a) => a.goal_id === targetGoalId)?.allocation_percentage ?? 0
+          const newTargetAlloc = Math.min(100, existingTargetAlloc + sourceAlloc)
+
+          // 1. Remove from source goal
+          await assignAsset({
+            asset_type: asset.asset_type,
+            asset_key: asset.asset_key,
+            goal_id: sourceGoalId,
+            allocation_percentage: 0,
+          })
+
+          // 2. Assign to target goal
+          await assignAsset({
+            asset_type: asset.asset_type,
+            asset_key: asset.asset_key,
+            goal_id: targetGoalId,
+            allocation_percentage: newTargetAlloc,
+          })
+
+          return
+        }
+
+        // Case 2: Dragged from Unassigned Panel
+        const existingAlloc = asset.allocations.find((a) => a.goal_id === targetGoalId)
+        const available = (existingAlloc?.allocation_percentage ?? 0) + asset.unallocated_percentage
+
+        if (available < 10) {
+          showErrorToast(
+            `Cannot allocate "${asset.title}": 100% is already allocated across other goals. Adjust existing allocations first.`,
+            'Allocation Limit'
+          )
+          return
+        }
+
+        setSplitAsset(asset)
+        setSplitGoal(targetGoal)
+        setSplitDialogOpen(true)
       }
     } catch (err: unknown) {
       if (err instanceof Error) {
-        setErrorMessage(err.message)
+        showErrorToast(err.message, 'Assignment Failed')
       } else {
-        setErrorMessage('Failed to update asset assignment')
+        showErrorToast('Failed to update asset assignment', 'Assignment Failed')
       }
     }
   }
@@ -253,7 +317,7 @@ export function DashboardPage() {
       }
     } catch (err: unknown) {
       if (err instanceof Error) {
-        setErrorMessage(err.message)
+        showErrorToast(err.message, 'Unassign Failed')
       }
     }
   }
@@ -356,23 +420,6 @@ export function DashboardPage() {
               </Button>
             </div>
           </div>
-
-          {/* Sync error alert */}
-          {(errorMessage || syncError) && (
-            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive flex items-center justify-between gap-3 animate-in fade-in">
-              <div className="flex items-center gap-3">
-                <AlertCircle className="h-5 w-5 shrink-0" />
-                <p>{errorMessage || (syncError instanceof Error ? syncError.message : 'Failed to sync with Kite')}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setErrorMessage(null)}
-                className="text-xs hover:underline uppercase font-bold tracking-wider"
-              >
-                Dismiss
-              </button>
-            </div>
-          )}
 
           {/* Goals & Unassigned Assets Canvas */}
           {hasAssets ? (

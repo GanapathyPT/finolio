@@ -13,8 +13,16 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { DraggableAssetItem } from './DraggableAssetItem'
 import { GoalHorizonArcCard } from './GoalHorizonArcCard'
-import { formatTargetDate, type GoalNode } from '@/types/goals'
+import { formatTargetDate, calculateProjectedCorpus, type GoalNode } from '@/types/goals'
 import type { UnifiedAsset } from '@/types/unifiedAsset'
+
+function formatCurrency(val: number): string {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(val)
+}
 
 interface GoalAccordionItemProps {
   goal: GoalNode
@@ -103,6 +111,7 @@ export function GoalAccordionItem({
   const target = goal.target_amount
   const isTargetSet = Boolean(target && target > 0)
   const targetGap = isTargetSet ? Math.max(0, target! - effectiveCovered) : null
+  const projectedCorpus = calculateProjectedCorpus(target, goal.target_date, 0.07)
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -155,6 +164,15 @@ export function GoalAccordionItem({
                 <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground font-mono">
                   <Calendar className="w-3 h-3" />
                   {formatTargetDate(goal.target_date)}
+                </span>
+              )}
+
+              {projectedCorpus.hasInflation && (
+                <span
+                  className="inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/25 px-1.5 py-0.5 rounded-md font-mono"
+                  title={`Nominal target ${formatCurrency(target || 0)} projected to ${formatCurrency(projectedCorpus.projectedAmount)} in ~${projectedCorpus.yearsRemaining}y at 7% inflation`}
+                >
+                  Proj. {formatCurrency(projectedCorpus.projectedAmount)}
                 </span>
               )}
             </div>
@@ -219,6 +237,7 @@ export function GoalAccordionItem({
             effectiveCovered={effectiveCovered}
             target={target}
             targetGap={targetGap}
+            targetDate={goal.target_date}
           />
 
           {/* Collapsible Assets Toggle */}
@@ -243,6 +262,7 @@ export function GoalAccordionItem({
                       key={`${goal.id}-${asset.asset_key}`}
                       asset={asset}
                       allocationPercentage={percentage}
+                      sourceGoalId={goal.id}
                       onEditAllocation={() => onEditAllocation?.(asset, goal)}
                       onUnassign={() => onUnassignAsset(asset, goal.id)}
                     />

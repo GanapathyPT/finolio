@@ -8,6 +8,7 @@ import {
   Sparkles,
   Layers,
 } from 'lucide-react'
+import { calculateProjectedCorpus } from '@/types/goals'
 
 function formatINR(val: number): string {
   return new Intl.NumberFormat('en-IN', {
@@ -52,6 +53,7 @@ interface GoalHorizonArcCardProps {
   effectiveCovered: number
   target?: number | null
   targetGap?: number | null
+  targetDate?: string | null
 }
 
 export function GoalHorizonArcCard({
@@ -60,10 +62,25 @@ export function GoalHorizonArcCard({
   directPnLPct,
   effectiveCovered,
   target,
-  targetGap,
+  targetGap: _targetGap,
+  targetDate,
 }: GoalHorizonArcCardProps) {
   const isTargetSet = Boolean(target && target > 0)
   const isProfit = directPnL >= 0
+
+  // Inflation projection (fixed 7% p.a.)
+  const inflationData = calculateProjectedCorpus(target, targetDate, 0.07)
+  const [showProjected, setShowProjected] = useState(true)
+
+  // Determine active benchmark target: projected corpus if enabled and has inflation, else nominal target
+  const activeTarget =
+    isTargetSet && inflationData.hasInflation && showProjected
+      ? inflationData.projectedAmount
+      : (target ?? 0)
+
+  const activeTargetGap = isTargetSet
+    ? Math.max(0, activeTarget - effectiveCovered)
+    : null
 
   // Animated live number count-up
   const animatedCovered = useCountUp(effectiveCovered, 900)
@@ -80,10 +97,10 @@ export function GoalHorizonArcCard({
   let coveredPct = 0
   let multiplier = 1
 
-  if (isTargetSet) {
-    principalPct = Math.max(0, (directInvested / target!) * 100)
-    pnlPct = (directPnL / target!) * 100
-    coveredPct = Math.min(100, Math.max(0, (effectiveCovered / target!) * 100))
+  if (isTargetSet && activeTarget > 0) {
+    principalPct = Math.max(0, (directInvested / activeTarget) * 100)
+    pnlPct = (directPnL / activeTarget) * 100
+    coveredPct = Math.min(100, Math.max(0, (effectiveCovered / activeTarget) * 100))
   } else {
     // Open-ended goal: represents anatomy of accumulated wealth
     if (effectiveCovered > 0) {
@@ -260,7 +277,9 @@ export function GoalHorizonArcCard({
             </span>
             <span className="text-[11px] sm:text-xs font-mono text-muted-foreground font-medium">
               {isTargetSet
-                ? `${coveredPct.toFixed(1)}% of ${formatINR(target!)} aim`
+                ? `${coveredPct.toFixed(1)}% of ${formatINR(activeTarget)} ${
+                    showProjected && inflationData.hasInflation ? 'proj. aim' : 'aim'
+                  }`
                 : 'Accumulated Wealth Pool'}
             </span>
           </div>
@@ -272,6 +291,33 @@ export function GoalHorizonArcCard({
             <span className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">
               {isTargetSet ? 'Target Goal Progress' : 'Open-Ended Compounding Pool'}
             </span>
+
+            {isTargetSet && inflationData.hasInflation && (
+              <div className="inline-flex items-center p-0.5 rounded-md bg-muted/80 border border-border/60 text-[10px] font-mono">
+                <button
+                  type="button"
+                  onClick={() => setShowProjected(true)}
+                  className={`px-2 py-0.5 rounded transition-all ${
+                    showProjected
+                      ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 font-bold shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Projected (7% p.a.)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowProjected(false)}
+                  className={`px-2 py-0.5 rounded transition-all ${
+                    !showProjected
+                      ? 'bg-background text-foreground font-bold shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Today's Cost
+                </button>
+              </div>
+            )}
 
             {isTargetSet && (
               <span
@@ -303,14 +349,24 @@ export function GoalHorizonArcCard({
 
           <p className="text-sm text-muted-foreground font-mono leading-relaxed max-w-xl">
             {isTargetSet ? (
-              targetGap != null && targetGap === 0 ? (
+              activeTargetGap != null && activeTargetGap === 0 ? (
                 <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
                   Congratulations! This goal corpus is fully covered and thriving.
                 </span>
               ) : (
                 <>
-                  <span className="text-foreground font-semibold">{formatINR(targetGap ?? 0)}</span> remaining
-                  to complete your <span className="text-foreground font-semibold">{formatINR(target!)}</span> target aim.
+                  <span className="text-foreground font-semibold">{formatINR(activeTargetGap ?? 0)}</span> remaining
+                  to complete your <span className="text-foreground font-semibold">{formatINR(activeTarget)}</span>{' '}
+                  {showProjected && inflationData.hasInflation ? (
+                    <>
+                      projected aim{' '}
+                      <span className="text-amber-600 dark:text-amber-400 font-normal">
+                        (~{inflationData.yearsRemaining}y horizon)
+                      </span>
+                    </>
+                  ) : (
+                    'target aim'
+                  )}.
                 </>
               )
             ) : (
@@ -408,24 +464,45 @@ export function GoalHorizonArcCard({
 
         {/* Swatch 3: Target Aim or Compounding Multiplier */}
         <div className="p-3 rounded-xl bg-muted/40 border border-border/60 space-y-1">
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium">
-            <span className="w-2.5 h-2.5 rounded-full bg-muted-foreground/40 shrink-0" />
-            {isTargetSet ? (
-              <Target className="w-3.5 h-3.5 text-primary" />
-            ) : (
-              <Zap className="w-3.5 h-3.5 text-amber-500" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium">
+              <span className="w-2.5 h-2.5 rounded-full bg-muted-foreground/40 shrink-0" />
+              {isTargetSet ? (
+                <Target className="w-3.5 h-3.5 text-primary" />
+              ) : (
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+              )}
+              <span>{isTargetSet ? 'Goal Target (Aim)' : 'Compounding Engine'}</span>
+            </div>
+            {isTargetSet && inflationData.hasInflation && (
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 font-medium">
+                7% infl.
+              </span>
             )}
-            <span>{isTargetSet ? 'Goal Target (Aim)' : 'Compounding Engine'}</span>
           </div>
           <div className="font-mono font-bold text-base text-foreground">
-            {isTargetSet ? formatINR(target!) : `${multiplier.toFixed(2)}x Multiplier`}
+            {isTargetSet ? formatINR(activeTarget) : `${multiplier.toFixed(2)}x Multiplier`}
           </div>
           <div className="text-[10px] text-muted-foreground font-mono">
-            {isTargetSet
-              ? targetGap != null && targetGap === 0
-                ? 'Target 100% full'
-                : `${formatINR(targetGap ?? 0)} remaining`
-              : `₹1 gives ₹${(multiplier - 1).toFixed(2)} in profit`}
+            {isTargetSet ? (
+              inflationData.hasInflation ? (
+                showProjected ? (
+                  <span>
+                    Today's cost basis: <span className="text-foreground font-medium">{formatINR(target!)}</span> (+{formatINR(inflationData.inflationImpact)})
+                  </span>
+                ) : (
+                  <span>
+                    Projected in {inflationData.yearsRemaining}y: <span className="text-foreground font-medium">{formatINR(inflationData.projectedAmount)}</span>
+                  </span>
+                )
+              ) : activeTargetGap != null && activeTargetGap === 0 ? (
+                'Target 100% full'
+              ) : (
+                `${formatINR(activeTargetGap ?? 0)} remaining`
+              )
+            ) : (
+              `₹1 gives ₹${(multiplier - 1).toFixed(2)} in profit`
+            )}
           </div>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { AuthProvider } from '@/context/AuthContext'
+import { ToastProvider } from '@/context/ToastContext'
 import { useAuth } from '@/hooks/useAuth'
 import { Logo } from '@/components/Logo'
 import { DashboardPage } from '@/pages/DashboardPage'
@@ -28,7 +29,9 @@ function AppContent() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <ToastProvider>
+        <AppContent />
+      </ToastProvider>
     </AuthProvider>
   )
 }

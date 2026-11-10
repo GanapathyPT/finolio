@@ -71,3 +71,76 @@ export function formatTargetDate(val?: string | null): string {
   return trimmed
 }
 
+export interface ProjectedCorpusResult {
+  nominalAmount: number
+  projectedAmount: number
+  inflationImpact: number
+  yearsRemaining: number
+  hasInflation: boolean
+  inflationRate: number
+}
+
+export function calculateProjectedCorpus(
+  targetAmount?: number | null,
+  targetDate?: string | null,
+  annualInflationRate = 0.07
+): ProjectedCorpusResult {
+  const nominal = targetAmount && targetAmount > 0 ? targetAmount : 0
+  if (!nominal || !targetDate) {
+    return {
+      nominalAmount: nominal,
+      projectedAmount: nominal,
+      inflationImpact: 0,
+      yearsRemaining: 0,
+      hasInflation: false,
+      inflationRate: annualInflationRate,
+    }
+  }
+
+  const trimmed = targetDate.trim()
+  const now = new Date()
+  const currentYear = now.getFullYear()
+  const currentMonth = now.getMonth()
+  let years = 0
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const [y, m, d] = trimmed.split('-').map(Number)
+    const targetTime = new Date(y, m - 1, d).getTime()
+    const diffDays = (targetTime - now.getTime()) / (1000 * 60 * 60 * 24)
+    years = Math.max(0, diffDays / 365.25)
+  } else if (/^\d{4}-\d{2}$/.test(trimmed)) {
+    const [y, m] = trimmed.split('-').map(Number)
+    const monthDiff = (y - currentYear) * 12 + (m - 1 - currentMonth)
+    years = Math.max(0, monthDiff / 12)
+  } else if (/^\d{4}$/.test(trimmed)) {
+    const y = parseInt(trimmed, 10)
+    years = Math.max(0, y - currentYear)
+  }
+
+  if (years <= 0) {
+    return {
+      nominalAmount: nominal,
+      projectedAmount: nominal,
+      inflationImpact: 0,
+      yearsRemaining: 0,
+      hasInflation: false,
+      inflationRate: annualInflationRate,
+    }
+  }
+
+  // Future value: PV * (1 + r)^years
+  const multiplier = Math.pow(1 + annualInflationRate, years)
+  const projectedAmount = Math.round(nominal * multiplier)
+  const inflationImpact = projectedAmount - nominal
+
+  return {
+    nominalAmount: nominal,
+    projectedAmount,
+    inflationImpact,
+    yearsRemaining: Math.round(years * 10) / 10,
+    hasInflation: inflationImpact > 0,
+    inflationRate: annualInflationRate,
+  }
+}
+
+

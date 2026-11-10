@@ -1,7 +1,12 @@
 import { useState } from 'react'
-import { X, Calendar } from 'lucide-react'
+import { X, Calendar, TrendingUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { GoalNode, CreateGoalRequest, UpdateGoalRequest } from '@/types/goals'
+import {
+  calculateProjectedCorpus,
+  type GoalNode,
+  type CreateGoalRequest,
+  type UpdateGoalRequest,
+} from '@/types/goals'
 
 const CURRENT_YEAR = new Date().getFullYear()
 
@@ -96,6 +101,13 @@ function GoalForm({
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const parsedTarget = targetAmount ? parseFloat(targetAmount) : null
+  const projected = calculateProjectedCorpus(
+    parsedTarget && !isNaN(parsedTarget) ? parsedTarget : null,
+    targetDate,
+    0.07
+  )
 
   const handlePrecisionChange = (p: DatePrecision) => {
     setPrecision(p)
@@ -369,6 +381,48 @@ function GoalForm({
             </div>
           )}
         </div>
+
+        {/* Inflation-Adjusted Target Preview Banner */}
+        {projected.hasInflation && (
+          <div className="flex items-start gap-2.5 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs">
+            <TrendingUp className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="space-y-1 min-w-0 flex-1">
+              <div className="font-semibold text-amber-700 dark:text-amber-300 flex items-center justify-between gap-1 flex-wrap">
+                <span>Inflation-Adjusted Target (7% p.a.)</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 font-mono font-medium">
+                  ~{projected.yearsRemaining}y horizon
+                </span>
+              </div>
+              <div className="font-mono text-base font-bold text-foreground">
+                {new Intl.NumberFormat('en-IN', {
+                  style: 'currency',
+                  currency: 'INR',
+                  maximumFractionDigits: 0,
+                }).format(projected.projectedAmount)}
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                To match{' '}
+                <span className="font-mono font-medium text-foreground">
+                  {new Intl.NumberFormat('en-IN', {
+                    style: 'currency',
+                    currency: 'INR',
+                    maximumFractionDigits: 0,
+                  }).format(projected.nominalAmount)}
+                </span>{' '}
+                purchasing power in {projected.yearsRemaining} years, you will need an extra{' '}
+                <span className="font-mono text-foreground font-medium">
+                  +
+                  {new Intl.NumberFormat('en-IN', {
+                    style: 'currency',
+                    currency: 'INR',
+                    maximumFractionDigits: 0,
+                  }).format(projected.inflationImpact)}
+                </span>{' '}
+                due to inflation.
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center justify-end gap-2 pt-3 border-t">
           <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={isSubmitting}>

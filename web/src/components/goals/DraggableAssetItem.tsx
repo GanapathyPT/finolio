@@ -27,6 +27,7 @@ function formatPercent(val: number): string {
 interface DraggableAssetItemProps {
   asset: UnifiedAsset
   allocationPercentage?: number
+  sourceGoalId?: number
   onUnassign?: (asset: UnifiedAsset) => void
   onEditAllocation?: (asset: UnifiedAsset) => void
   isOverlay?: boolean
@@ -36,6 +37,7 @@ interface DraggableAssetItemProps {
 export function DraggableAssetItem({
   asset,
   allocationPercentage,
+  sourceGoalId,
   onUnassign,
   onEditAllocation,
   isOverlay = false,
@@ -44,10 +46,10 @@ export function DraggableAssetItem({
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: isUnassignedView
       ? `unassigned-${asset.asset_key}`
-      : allocationPercentage !== undefined
-      ? `goal-asset-${asset.asset_key}`
-      : asset.asset_key,
-    data: asset,
+      : sourceGoalId !== undefined
+      ? `goal-${sourceGoalId}-asset-${asset.asset_key}`
+      : `asset-${asset.asset_key}`,
+    data: { asset, sourceGoalId },
     disabled: isOverlay,
   })
 
