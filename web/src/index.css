@@ -119,3 +119,32 @@
 .animate-beacon-ping {
   animation: beacon-ping 2.4s cubic-bezier(0.1, 0.6, 0.4, 1) infinite;
 }
+
+/* Open-Ended Compounding Flywheel Animations */
+@keyframes flywheel-spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes flywheel-spin-reverse {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+.animate-flywheel-spin {
+  transform-origin: 110px 110px;
+  animation: flywheel-spin-slow 18s linear infinite;
+}
+
+.animate-flywheel-reverse {
+  transform-origin: 110px 110px;
+  animation: flywheel-spin-reverse 26s linear infinite;
+}

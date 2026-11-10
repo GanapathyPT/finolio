@@ -129,161 +129,321 @@ export function GoalHorizonArcCard({
     (pnlDisplayPct / 100) * totalArcLen
   )
 
-  // Orbital Beacon coordinates at tip of progress
+  // Orbital Beacon coordinates at tip of progress (for targeted semi-arc)
   const beaconFraction = Math.min(1, Math.max(0, coveredPct / 100))
   // Angle goes from PI (left, 0%) down to 0 (right, 100%)
   const beaconAngle = Math.PI * (1 - beaconFraction)
   const bx = cx + r * Math.cos(beaconAngle)
   const by = cy - r * Math.sin(beaconAngle)
 
+  // 360° Open-Ended Compounding Flywheel Geometry (Deterministic to actual pool metrics)
+  const flywheelRadius = 82
+  const flywheelCirc = 2 * Math.PI * flywheelRadius // ~515.22
+  const poolTotal = effectiveCovered > 0 ? effectiveCovered : 1
+  const openPrincipalRatio = Math.max(0, Math.min(1, directInvested / poolTotal))
+  const openPnLRatio = Math.max(0, Math.min(1, Math.abs(directPnL) / poolTotal))
+
+  let flywheelPnLLen = 0
+  let flywheelPrincipalLen = flywheelCirc
+
+  if (effectiveCovered > 0 && Math.abs(directPnL) > 0) {
+    // Proportional length reflecting true P&L percentage, with a minimum visible 6px spark
+    flywheelPnLLen = Math.min(
+      flywheelCirc - 20,
+      Math.max(6, openPnLRatio * flywheelCirc)
+    )
+    flywheelPrincipalLen = Math.max(20, flywheelCirc - flywheelPnLLen - 6)
+  }
+
+  // Frontier beacon position at transition between base capital and growth
+  // 0 is 12 o'clock (-PI / 2), progressing clockwise
+  const frontierAngle = -Math.PI / 2 + openPrincipalRatio * (2 * Math.PI)
+  const fbx = 110 + flywheelRadius * Math.cos(frontierAngle)
+  const fby = 110 + flywheelRadius * Math.sin(frontierAngle)
+
   const isAchieved = isTargetSet && coveredPct >= 100
 
   return (
     <div className="p-4 sm:p-6 bg-card rounded-2xl border border-border shadow-xs space-y-6">
-      {/* Upper Deck: Orbital Horizon Arc & Core Metric Display */}
+      {/* Upper Deck: Orbital Horizon Arc / Compounding Flywheel & Core Metric Display */}
       <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
-        {/* Orbital Horizon Arc Gauge */}
-        <div className="relative w-72 sm:w-80 h-48 sm:h-52 flex items-end justify-center select-none shrink-0 overflow-visible">
-          <svg
-            viewBox="0 0 240 145"
-            className="w-full h-full overflow-visible"
-            aria-hidden="true"
-          >
-            <defs>
-              {/* Principal Glow Gradient */}
-              <linearGradient id="principal-grad" x1="0%" y1="100%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#2563eb" />
-                <stop offset="100%" stopColor="#38bdf8" />
-              </linearGradient>
+        {isTargetSet ? (
+          /* Target Horizon Arc Gauge (Semi-radial 180° gauge toward target) */
+          <div className="relative w-72 sm:w-80 h-48 sm:h-52 flex items-end justify-center select-none shrink-0 overflow-visible">
+            <svg
+              viewBox="0 0 240 145"
+              className="w-full h-full overflow-visible"
+              aria-hidden="true"
+            >
+              <defs>
+                {/* Principal Glow Gradient */}
+                <linearGradient id="principal-grad" x1="0%" y1="100%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#2563eb" />
+                  <stop offset="100%" stopColor="#38bdf8" />
+                </linearGradient>
 
-              {/* Profit Emerald Gradient */}
-              <linearGradient id="profit-grad" x1="0%" y1="100%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#10b981" />
-                <stop offset="100%" stopColor="#a3e635" />
-              </linearGradient>
+                {/* Profit Emerald Gradient */}
+                <linearGradient id="profit-grad" x1="0%" y1="100%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#10b981" />
+                  <stop offset="100%" stopColor="#a3e635" />
+                </linearGradient>
 
-              {/* Drawdown Rose Gradient */}
-              <linearGradient id="loss-grad" x1="0%" y1="100%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#e11d48" />
-                <stop offset="100%" stopColor="#fb7185" />
-              </linearGradient>
+                {/* Drawdown Rose Gradient */}
+                <linearGradient id="loss-grad" x1="0%" y1="100%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#e11d48" />
+                  <stop offset="100%" stopColor="#fb7185" />
+                </linearGradient>
 
-              {/* Shimmer laser beam glow filter */}
-              <filter id="arc-glow" x="-20%" y="-20%" width="140%" height="140%">
-                <feGaussianBlur stdDeviation="3" result="blur" />
-                <feComposite in="SourceGraphic" in2="blur" operator="over" />
-              </filter>
-            </defs>
+                {/* Shimmer laser beam glow filter */}
+                <filter id="arc-glow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="3" result="blur" />
+                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
+              </defs>
 
-            {/* Base Background Track (Muted Horizon Line) */}
-            <path
-              d="M 28 122 A 92 92 0 0 1 212 122"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="11"
-              strokeLinecap="round"
-              className="text-muted/60 dark:text-muted/40"
-            />
-
-            {/* Principal Arc (Capital Invested) */}
-            {principalLen > 0 && (
+              {/* Base Background Track (Muted Horizon Line) */}
               <path
                 d="M 28 122 A 92 92 0 0 1 212 122"
                 fill="none"
-                stroke="url(#principal-grad)"
+                stroke="currentColor"
                 strokeWidth="11"
                 strokeLinecap="round"
-                strokeDasharray={`${principalLen} ${totalArcLen}`}
-                strokeDashoffset="0"
-                className="transition-all duration-1000 ease-out"
+                className="text-muted/60 dark:text-muted/40"
               />
-            )}
 
-            {/* P&L Arc (Market Gain or Drawdown) */}
-            {pnlLen > 0 && (
-              <path
-                d="M 28 122 A 92 92 0 0 1 212 122"
-                fill="none"
-                stroke={isProfit ? 'url(#profit-grad)' : 'url(#loss-grad)'}
-                strokeWidth="11"
-                strokeLinecap="round"
-                strokeDasharray={`${pnlLen} ${totalArcLen}`}
-                strokeDashoffset={-principalLen}
-                filter={isProfit ? 'url(#arc-glow)' : undefined}
-                className="transition-all duration-1000 ease-out"
-              />
-            )}
-
-            {/* Orbital Beacon: Animated Frontier Node */}
-            {coveredPct > 0 && (
-              <g className="transition-all duration-1000 ease-out">
-                {/* Outer Radar Ping Ripple */}
-                <circle
-                  cx={bx}
-                  cy={by}
-                  r="13"
+              {/* Principal Arc (Capital Invested) */}
+              {principalLen > 0 && (
+                <path
+                  d="M 28 122 A 92 92 0 0 1 212 122"
                   fill="none"
-                  strokeWidth="2"
-                  className={`animate-beacon-ping ${
-                    isProfit ? 'stroke-emerald-400' : 'stroke-rose-400'
-                  }`}
+                  stroke="url(#principal-grad)"
+                  strokeWidth="11"
+                  strokeLinecap="round"
+                  strokeDasharray={`${principalLen} ${totalArcLen}`}
+                  strokeDashoffset="0"
+                  className="transition-all duration-1000 ease-out"
                 />
+              )}
 
-                {/* Soft Halo Aura */}
-                <circle
-                  cx={bx}
-                  cy={by}
-                  r="8"
-                  className={`animate-pulse ${
-                    isProfit ? 'fill-emerald-400/40' : 'fill-rose-400/40'
-                  }`}
+              {/* P&L Arc (Market Gain or Drawdown) */}
+              {pnlLen > 0 && (
+                <path
+                  d="M 28 122 A 92 92 0 0 1 212 122"
+                  fill="none"
+                  stroke={isProfit ? 'url(#profit-grad)' : 'url(#loss-grad)'}
+                  strokeWidth="11"
+                  strokeLinecap="round"
+                  strokeDasharray={`${pnlLen} ${totalArcLen}`}
+                  strokeDashoffset={-principalLen}
+                  filter={isProfit ? 'url(#arc-glow)' : undefined}
+                  className="transition-all duration-1000 ease-out"
                 />
+              )}
 
-                {/* Solid Core Beacon Pearl */}
-                <circle
-                  cx={bx}
-                  cy={by}
-                  r="4.5"
-                  className={`stroke-2 stroke-card shadow-lg ${
-                    isProfit ? 'fill-emerald-400' : 'fill-rose-400'
-                  }`}
-                />
-              </g>
-            )}
+              {/* Orbital Beacon: Animated Frontier Node */}
+              {coveredPct > 0 && (
+                <g className="transition-all duration-1000 ease-out">
+                  {/* Outer Radar Ping Ripple */}
+                  <circle
+                    cx={bx}
+                    cy={by}
+                    r="13"
+                    fill="none"
+                    strokeWidth="2"
+                    className={`animate-beacon-ping ${
+                      isProfit ? 'stroke-emerald-400' : 'stroke-rose-400'
+                    }`}
+                  />
 
-            {/* Baseline Ticks */}
-            <text
-              x="28"
-              y="138"
-              textAnchor="middle"
-              className="text-[9px] font-mono font-medium fill-muted-foreground select-none"
-            >
-              0%
-            </text>
-            <text
-              x="212"
-              y="138"
-              textAnchor="middle"
-              className="text-[9px] font-mono font-medium fill-muted-foreground select-none"
-            >
-              {isTargetSet ? '100%' : 'Pool'}
-            </text>
-          </svg>
+                  {/* Soft Halo Aura */}
+                  <circle
+                    cx={bx}
+                    cy={by}
+                    r="8"
+                    className={`animate-pulse ${
+                      isProfit ? 'fill-emerald-400/40' : 'fill-rose-400/40'
+                    }`}
+                  />
 
-          {/* Center Readout (Inside Arc Chamber) */}
-          <div className="absolute inset-x-0 bottom-4 flex flex-col items-center text-center pointer-events-none">
-            <span className="text-2xl sm:text-3xl font-mono font-black tracking-tight text-foreground drop-shadow-xs">
-              {formatINR(animatedCovered)}
-            </span>
-            <span className="text-[11px] sm:text-xs font-mono text-muted-foreground font-medium">
-              {isTargetSet
-                ? `${coveredPct.toFixed(1)}% of ${formatINR(activeTarget)} ${
-                    showProjected && inflationData.hasInflation ? 'proj. aim' : 'aim'
-                  }`
-                : 'Accumulated Wealth Pool'}
-            </span>
+                  {/* Solid Core Beacon Pearl */}
+                  <circle
+                    cx={bx}
+                    cy={by}
+                    r="4.5"
+                    className={`stroke-2 stroke-card shadow-lg ${
+                      isProfit ? 'fill-emerald-400' : 'fill-rose-400'
+                    }`}
+                  />
+                </g>
+              )}
+
+              {/* Baseline Ticks */}
+              <text
+                x="28"
+                y="138"
+                textAnchor="middle"
+                className="text-[9px] font-mono font-medium fill-muted-foreground select-none"
+              >
+                0%
+              </text>
+              <text
+                x="212"
+                y="138"
+                textAnchor="middle"
+                className="text-[9px] font-mono font-medium fill-muted-foreground select-none"
+              >
+                100%
+              </text>
+            </svg>
+
+            {/* Center Readout (Inside Arc Chamber) */}
+            <div className="absolute inset-x-0 bottom-4 flex flex-col items-center text-center pointer-events-none">
+              <span className="text-2xl sm:text-3xl font-mono font-black tracking-tight text-foreground drop-shadow-xs">
+                {formatINR(animatedCovered)}
+              </span>
+              <span className="text-[11px] sm:text-xs font-mono text-muted-foreground font-medium">
+                {coveredPct.toFixed(1)}% of {formatINR(activeTarget)}{' '}
+                {showProjected && inflationData.hasInflation ? 'proj. aim' : 'aim'}
+              </span>
+            </div>
           </div>
-        </div>
+        ) : (
+          /* Open-Ended Compounding Celestial Flywheel (360° perpetual orbit strictly proportional) */
+          <div className="relative w-56 sm:w-64 h-56 sm:h-64 flex items-center justify-center select-none shrink-0 overflow-visible">
+            <svg
+              viewBox="0 0 220 220"
+              className="w-full h-full overflow-visible"
+              aria-hidden="true"
+            >
+              <defs>
+                <linearGradient id="principal-grad-360" x1="0%" y1="100%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#2563eb" />
+                  <stop offset="100%" stopColor="#38bdf8" />
+                </linearGradient>
+
+                <linearGradient id="profit-grad-360" x1="0%" y1="100%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#10b981" />
+                  <stop offset="100%" stopColor="#34d399" />
+                </linearGradient>
+
+                <linearGradient id="loss-grad-360" x1="0%" y1="100%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#e11d48" />
+                  <stop offset="100%" stopColor="#fb7185" />
+                </linearGradient>
+
+                <radialGradient id="flywheel-center-glow" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stopColor={isProfit ? '#10b981' : '#e11d48'} stopOpacity="0.1" />
+                  <stop offset="65%" stopColor="#0284c7" stopOpacity="0.03" />
+                  <stop offset="100%" stopColor="transparent" stopOpacity="0" />
+                </radialGradient>
+
+                <filter id="flywheel-glow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="3.5" result="blur" />
+                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
+              </defs>
+
+              {/* Central Ambient Aura */}
+              <circle cx="110" cy="110" r="100" fill="url(#flywheel-center-glow)" />
+
+              {/* Outer Orbit Guide Track (Continuous 360° Background) */}
+              <circle
+                cx="110"
+                cy="110"
+                r={flywheelRadius}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                className="text-muted/20"
+                strokeDasharray="4 6"
+              />
+
+              {/* Rotating Composite Planetary Ring (Both Base Capital & Profit on same deterministic track) */}
+              <g className="animate-flywheel-spin">
+                {/* Base Capital Track (Sky Blue) - Strictly proportional */}
+                <circle
+                  cx="110"
+                  cy="110"
+                  r={flywheelRadius}
+                  fill="none"
+                  stroke="url(#principal-grad-360)"
+                  strokeWidth="6.5"
+                  strokeLinecap="round"
+                  strokeDasharray={`${flywheelPrincipalLen} ${flywheelCirc}`}
+                  strokeDashoffset="0"
+                  transform="rotate(-90 110 110)"
+                />
+
+                {/* Compounded Growth Track (Emerald / Rose) - Strictly proportional */}
+                {flywheelPnLLen > 0 && (
+                  <circle
+                    cx="110"
+                    cy="110"
+                    r={flywheelRadius}
+                    fill="none"
+                    stroke={isProfit ? 'url(#profit-grad-360)' : 'url(#loss-grad-360)'}
+                    strokeWidth="6.5"
+                    strokeLinecap="round"
+                    strokeDasharray={`${flywheelPnLLen} ${flywheelCirc}`}
+                    strokeDashoffset={-(flywheelPrincipalLen + 6)}
+                    transform="rotate(-90 110 110)"
+                    filter="url(#flywheel-glow)"
+                  />
+                )}
+
+                {/* Frontier Orbit Node (Pulsing Beacon Pearl at the active growth boundary) */}
+                <g>
+                  <circle
+                    cx={fbx}
+                    cy={fby}
+                    r="11"
+                    fill="none"
+                    stroke={isProfit ? '#10b981' : '#f43f5e'}
+                    strokeWidth="1.5"
+                    className="animate-beacon-ping"
+                  />
+                  <circle
+                    cx={fbx}
+                    cy={fby}
+                    r="6.5"
+                    className={isProfit ? 'fill-emerald-400/40' : 'fill-rose-400/40'}
+                  />
+                  <circle
+                    cx={fbx}
+                    cy={fby}
+                    r="4"
+                    className={`stroke-2 stroke-card shadow-md ${
+                      isProfit ? 'fill-emerald-400' : 'fill-rose-400'
+                    }`}
+                  />
+                </g>
+              </g>
+
+              {/* Inner Cosmic Depth Ring */}
+              <circle
+                cx="110"
+                cy="110"
+                r="62"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1"
+                className="text-muted/15"
+                strokeDasharray="2 4"
+              />
+            </svg>
+
+            {/* Core Center Readout (No 'PERPETUAL ENGINE' text) */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none p-4">
+              <span className="text-xl sm:text-2xl font-mono font-black tracking-tight text-foreground drop-shadow-xs">
+                {formatINR(animatedCovered)}
+              </span>
+              <div className="inline-flex items-center gap-1 mt-1 text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                <Zap className="w-3 h-3 text-amber-500" />
+                <span>{multiplier.toFixed(2)}x Multiplier</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Narrative & Milestone Status Engine */}
         <div className="flex-1 space-y-3.5 text-center lg:text-left min-w-0">
@@ -381,8 +541,10 @@ export function GoalHorizonArcCard({
           {/* Quick Ratio Pills */}
           <div className="flex items-center justify-center lg:justify-start gap-2 pt-0.5 flex-wrap">
             <span className="inline-flex items-center gap-1.5 text-xs font-mono px-2.5 py-1 rounded-lg bg-sky-500/10 text-sky-700 dark:text-sky-300 border border-sky-500/20 font-semibold">
-              <span className="w-2 h-2 rounded-full bg-sky-400 shrink-0" />
-              {principalPct.toFixed(1)}% Capital Invested
+              <span className="w-2.5 h-2.5 rounded-full bg-sky-400 shrink-0" />
+              {isTargetSet
+                ? `${principalPct.toFixed(1)}% Capital Invested`
+                : `${principalPct.toFixed(1)}% Base Capital`}
             </span>
 
             <span
@@ -398,7 +560,7 @@ export function GoalHorizonArcCard({
                 }`}
               />
               {isProfit ? '+' : ''}
-              {pnlPct.toFixed(1)}% Accumulated P&L
+              {pnlPct.toFixed(1)}% {isTargetSet ? 'Accumulated P&L' : 'Compounded Growth'}
             </span>
           </div>
         </div>
