@@ -16,6 +16,7 @@ type Goal struct {
 	Description  string      `db:"description" json:"description"`
 	TargetAmount interface{} `db:"target_amount" json:"target_amount"`
 	TargetDate   interface{} `db:"target_date" json:"target_date"`
+	DisplayOrder int64       `db:"display_order" json:"display_order"`
 	CreatedAt    time.Time   `db:"created_at" json:"created_at"`
 	UpdatedAt    time.Time   `db:"updated_at" json:"updated_at"`
 }

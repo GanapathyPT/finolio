@@ -74,11 +74,12 @@ INSERT INTO goals (
     title,
     description,
     target_amount,
-    target_date
+    target_date,
+    display_order
 ) VALUES (
-    ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?
 )
-RETURNING id, user_id, parent_id, title, description, target_amount, target_date, created_at, updated_at
+RETURNING id, user_id, parent_id, title, description, target_amount, target_date, display_order, created_at, updated_at
 `
 
 type CreateGoalParams struct {
@@ -88,6 +89,7 @@ type CreateGoalParams struct {
 	Description  string      `db:"description" json:"description"`
 	TargetAmount interface{} `db:"target_amount" json:"target_amount"`
 	TargetDate   interface{} `db:"target_date" json:"target_date"`
+	DisplayOrder int64       `db:"display_order" json:"display_order"`
 }
 
 func (q *Queries) CreateGoal(ctx context.Context, arg CreateGoalParams) (Goal, error) {
@@ -98,6 +100,7 @@ func (q *Queries) CreateGoal(ctx context.Context, arg CreateGoalParams) (Goal, e
 		arg.Description,
 		arg.TargetAmount,
 		arg.TargetDate,
+		arg.DisplayOrder,
 	)
 	var i Goal
 	err := row.Scan(
@@ -108,6 +111,7 @@ func (q *Queries) CreateGoal(ctx context.Context, arg CreateGoalParams) (Goal, e
 		&i.Description,
 		&i.TargetAmount,
 		&i.TargetDate,
+		&i.DisplayOrder,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -172,7 +176,7 @@ func (q *Queries) GetAssetAllocations(ctx context.Context, arg GetAssetAllocatio
 }
 
 const getGoalByID = `-- name: GetGoalByID :one
-SELECT id, user_id, parent_id, title, description, target_amount, target_date, created_at, updated_at FROM goals
+SELECT id, user_id, parent_id, title, description, target_amount, target_date, display_order, created_at, updated_at FROM goals
 WHERE id = ? AND user_id = ?
 `
 
@@ -192,6 +196,7 @@ func (q *Queries) GetGoalByID(ctx context.Context, arg GetGoalByIDParams) (Goal,
 		&i.Description,
 		&i.TargetAmount,
 		&i.TargetDate,
+		&i.DisplayOrder,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -235,9 +240,9 @@ func (q *Queries) ListGoalAssetsByUserID(ctx context.Context, userID int64) ([]G
 }
 
 const listGoalsByUserID = `-- name: ListGoalsByUserID :many
-SELECT id, user_id, parent_id, title, description, target_amount, target_date, created_at, updated_at FROM goals
+SELECT id, user_id, parent_id, title, description, target_amount, target_date, display_order, created_at, updated_at FROM goals
 WHERE user_id = ?
-ORDER BY parent_id ASC NULLS FIRST, created_at ASC
+ORDER BY parent_id ASC NULLS FIRST, display_order ASC, created_at ASC
 `
 
 func (q *Queries) ListGoalsByUserID(ctx context.Context, userID int64) ([]Goal, error) {
@@ -257,6 +262,7 @@ func (q *Queries) ListGoalsByUserID(ctx context.Context, userID int64) ([]Goal, 
 			&i.Description,
 			&i.TargetAmount,
 			&i.TargetDate,
+			&i.DisplayOrder,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -318,9 +324,10 @@ SET parent_id = ?,
     description = ?,
     target_amount = ?,
     target_date = ?,
+    display_order = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ? AND user_id = ?
-RETURNING id, user_id, parent_id, title, description, target_amount, target_date, created_at, updated_at
+RETURNING id, user_id, parent_id, title, description, target_amount, target_date, display_order, created_at, updated_at
 `
 
 type UpdateGoalParams struct {
@@ -329,6 +336,7 @@ type UpdateGoalParams struct {
 	Description  string      `db:"description" json:"description"`
 	TargetAmount interface{} `db:"target_amount" json:"target_amount"`
 	TargetDate   interface{} `db:"target_date" json:"target_date"`
+	DisplayOrder int64       `db:"display_order" json:"display_order"`
 	ID           int64       `db:"id" json:"id"`
 	UserID       int64       `db:"user_id" json:"user_id"`
 }
@@ -340,6 +348,7 @@ func (q *Queries) UpdateGoal(ctx context.Context, arg UpdateGoalParams) (Goal, e
 		arg.Description,
 		arg.TargetAmount,
 		arg.TargetDate,
+		arg.DisplayOrder,
 		arg.ID,
 		arg.UserID,
 	)
@@ -352,8 +361,27 @@ func (q *Queries) UpdateGoal(ctx context.Context, arg UpdateGoalParams) (Goal, e
 		&i.Description,
 		&i.TargetAmount,
 		&i.TargetDate,
+		&i.DisplayOrder,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updateGoalOrder = `-- name: UpdateGoalOrder :exec
+UPDATE goals
+SET display_order = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ? AND user_id = ?
+`
+
+type UpdateGoalOrderParams struct {
+	DisplayOrder int64 `db:"display_order" json:"display_order"`
+	ID           int64 `db:"id" json:"id"`
+	UserID       int64 `db:"user_id" json:"user_id"`
+}
+
+func (q *Queries) UpdateGoalOrder(ctx context.Context, arg UpdateGoalOrderParams) error {
+	_, err := q.db.ExecContext(ctx, updateGoalOrder, arg.DisplayOrder, arg.ID, arg.UserID)
+	return err
 }

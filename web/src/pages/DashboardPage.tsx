@@ -27,7 +27,14 @@ import { GoalAccordionItem } from '@/components/goals/GoalAccordionItem'
 import { DraggableAssetItem } from '@/components/goals/DraggableAssetItem'
 import { GoalDialog } from '@/components/goals/GoalDialog'
 import { SplitAllocationDialog } from '@/components/goals/SplitAllocationDialog'
-import type { GoalNode, CreateGoalRequest, UpdateGoalRequest } from '@/types/goals'
+import type {
+  GoalNode,
+  CreateGoalRequest,
+  UpdateGoalRequest,
+  ReorderGoalItem,
+  SubGoalAllocation,
+} from '@/types/goals'
+import { calculateBranchWaterfall } from '@/types/goals'
 import type { UnifiedAsset } from '@/types/unifiedAsset'
 
 function formatINR(val: number): string {
@@ -46,7 +53,15 @@ function formatPercent(val: number): string {
 export function DashboardPage() {
   const { auth } = useAuth()
   const { portfolio, isLoading: isPortfolioLoading, isSyncing, sync, syncError } = usePortfolio()
-  const { goals, isLoading: isGoalsLoading, createGoal, updateGoal, deleteGoal, assignAsset } = useGoals()
+  const {
+    goals,
+    isLoading: isGoalsLoading,
+    createGoal,
+    updateGoal,
+    deleteGoal,
+    assignAsset,
+    reorderGoals,
+  } = useGoals()
   const { error: showErrorToast } = useToast()
 
   // Notify on Kite sync error via top-right toast
@@ -168,6 +183,43 @@ export function DashboardPage() {
     return list
   }, [equityHoldings, mfHoldings])
 
+  // Branch-first waterfall funding calculations across all root goal hierarchies
+  const allWaterfallAllocations = useMemo(() => {
+    const masterMap = new Map<number, SubGoalAllocation>()
+
+    const getAllDescendantIds = (node: GoalNode): number[] => {
+      const ids = [node.id]
+      for (const child of node.children || []) {
+        ids.push(...getAllDescendantIds(child))
+      }
+      return ids
+    }
+
+    for (const root of goals) {
+      if (root.parent_id !== null) continue
+
+      const subtreeIds = new Set(getAllDescendantIds(root))
+      const rootCorpus = unifiedAssets.reduce((sum, a) => {
+        const alloc = a.allocations.find((al) => subtreeIds.has(al.goal_id))
+        if (!alloc) return sum
+        return sum + (a.current_value * alloc.allocation_percentage) / 100
+      }, 0)
+
+      const rootInvested = unifiedAssets.reduce((sum, a) => {
+        const alloc = a.allocations.find((al) => subtreeIds.has(al.goal_id))
+        if (!alloc) return sum
+        return sum + (a.average_price * a.quantity * alloc.allocation_percentage) / 100
+      }, 0)
+
+      const branchMap = calculateBranchWaterfall(root, rootCorpus, rootInvested)
+      for (const [id, alloc] of branchMap.entries()) {
+        masterMap.set(id, alloc)
+      }
+    }
+
+    return masterMap
+  }, [goals, unifiedAssets])
+
   const user = auth.user
   if (!user) return null
 
@@ -244,6 +296,15 @@ export function DashboardPage() {
 
         const targetGoal = findGoalInTree(goals, targetGoalId)
         if (!targetGoal) return
+
+        // Restrict asset allocation to root goals only
+        if (targetGoal.parent_id !== null) {
+          showErrorToast(
+            'Assets can only be linked to root goals. Funds cascade to sub-goals automatically in priority order.',
+            'Allocation Restricted'
+          )
+          return
+        }
 
         // Case 1: Direct Goal-to-Goal Transfer (moving asset from Goal A to Goal B)
         if (sourceGoalId !== undefined && sourceGoalId !== targetGoalId) {
@@ -367,6 +428,16 @@ export function DashboardPage() {
     await deleteGoal(goalId)
   }
 
+  const handleReorderSubgoals = async (orders: ReorderGoalItem[]) => {
+    try {
+      await reorderGoals({ orders })
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        showErrorToast(err.message, 'Failed to reorder priority')
+      }
+    }
+  }
+
   return (
     <DndContext
       sensors={sensors}
@@ -460,6 +531,9 @@ export function DashboardPage() {
                           onDeleteGoal={handleDeleteGoal}
                           onOpenCreateSubgoal={handleOpenCreateSubgoal}
                           onOpenEditGoal={handleOpenEditGoal}
+                          onReorderSubgoals={handleReorderSubgoals}
+                          waterfallAllocations={allWaterfallAllocations}
+                          rootGoalTitle={goal.title}
                         />
                       ))}
                     </div>
@@ -519,6 +593,9 @@ export function DashboardPage() {
                         onDeleteGoal={handleDeleteGoal}
                         onOpenCreateSubgoal={handleOpenCreateSubgoal}
                         onOpenEditGoal={handleOpenEditGoal}
+                        onReorderSubgoals={handleReorderSubgoals}
+                        waterfallAllocations={allWaterfallAllocations}
+                        rootGoalTitle={goal.title}
                       />
                     ))}
                   </div>

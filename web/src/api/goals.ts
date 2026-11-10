@@ -1,4 +1,10 @@
-import type { GoalNode, CreateGoalRequest, UpdateGoalRequest, AssignAssetRequest } from '@/types/goals'
+import type {
+  GoalNode,
+  CreateGoalRequest,
+  UpdateGoalRequest,
+  AssignAssetRequest,
+  ReorderGoalsRequest,
+} from '@/types/goals'
 
 export async function fetchGoalsTree(): Promise<GoalNode[]> {
   const res = await fetch('/api/goals', { credentials: 'same-origin' })
@@ -59,6 +65,19 @@ export async function assignAssetToGoal(req: AssignAssetRequest): Promise<void> 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: 'Failed to assign asset' }))
     throw new Error(error.error || 'Failed to assign asset')
+  }
+}
+
+export async function reorderGoals(req: ReorderGoalsRequest): Promise<void> {
+  const res = await fetch('/api/goals/reorder', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify(req),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: 'Failed to reorder goals' }))
+    throw new Error(error.error || 'Failed to reorder goals')
   }
 }
 

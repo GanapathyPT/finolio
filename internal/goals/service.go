@@ -41,6 +41,7 @@ func (s *Service) EnsureDefaultGoals(ctx context.Context, userID int64) error {
 		Description:  "6–12 months of essential living expenses set aside in liquid assets for unforeseen emergencies.",
 		TargetAmount: nil,
 		TargetDate:   nil,
+		DisplayOrder: 0,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create default Safety Net goal: %w", err)
@@ -54,6 +55,7 @@ func (s *Service) EnsureDefaultGoals(ctx context.Context, userID int64) error {
 		Description:  "Financial Independence / Retire Early corpus to generate passive cash flow and make work optional.",
 		TargetAmount: nil,
 		TargetDate:   nil,
+		DisplayOrder: 1,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create default FIRE goal: %w", err)
@@ -128,6 +130,11 @@ func (s *Service) CreateGoal(ctx context.Context, userID int64, req CreateGoalRe
 		targetDateVal = *req.TargetDate
 	}
 
+	var displayOrder int64
+	if req.DisplayOrder != nil {
+		displayOrder = *req.DisplayOrder
+	}
+
 	created, err := s.queries.CreateGoal(ctx, store.CreateGoalParams{
 		UserID:       userID,
 		ParentID:     parentIDVal,
@@ -135,6 +142,7 @@ func (s *Service) CreateGoal(ctx context.Context, userID int64, req CreateGoalRe
 		Description:  req.Description,
 		TargetAmount: targetAmountVal,
 		TargetDate:   targetDateVal,
+		DisplayOrder: displayOrder,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create goal: %w", err)
@@ -188,6 +196,19 @@ func (s *Service) UpdateGoal(ctx context.Context, userID, goalID int64, req Upda
 		targetDateVal = *req.TargetDate
 	}
 
+	var displayOrder int64
+	if req.DisplayOrder != nil {
+		displayOrder = *req.DisplayOrder
+	} else {
+		existing, err := s.queries.GetGoalByID(ctx, store.GetGoalByIDParams{
+			ID:     goalID,
+			UserID: userID,
+		})
+		if err == nil {
+			displayOrder = existing.DisplayOrder
+		}
+	}
+
 	updated, err := s.queries.UpdateGoal(ctx, store.UpdateGoalParams{
 		ID:           goalID,
 		UserID:       userID,
@@ -196,6 +217,7 @@ func (s *Service) UpdateGoal(ctx context.Context, userID, goalID int64, req Upda
 		Description:  req.Description,
 		TargetAmount: targetAmountVal,
 		TargetDate:   targetDateVal,
+		DisplayOrder: displayOrder,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update goal: %w", err)
@@ -210,6 +232,20 @@ func (s *Service) DeleteGoal(ctx context.Context, userID, goalID int64) error {
 		ID:     goalID,
 		UserID: userID,
 	})
+}
+
+// ReorderGoals updates display orders for a list of goals.
+func (s *Service) ReorderGoals(ctx context.Context, userID int64, req ReorderGoalsRequest) error {
+	for _, item := range req.Orders {
+		if err := s.queries.UpdateGoalOrder(ctx, store.UpdateGoalOrderParams{
+			UserID:       userID,
+			ID:           item.ID,
+			DisplayOrder: item.DisplayOrder,
+		}); err != nil {
+			return fmt.Errorf("failed to update goal order for id %d: %w", item.ID, err)
+		}
+	}
+	return nil
 }
 
 // AssignAsset assigns an equity or MF asset to a goal, or unassigns it if goal_id is nil or allocation_percentage is 0.
@@ -299,13 +335,14 @@ func (s *Service) GetGoalAssets(ctx context.Context, userID int64) ([]store.Goal
 
 func toGoalNode(g store.Goal) *GoalNode {
 	node := &GoalNode{
-		ID:          g.ID,
-		UserID:      g.UserID,
-		Title:       g.Title,
-		Description: g.Description,
-		CreatedAt:   g.CreatedAt,
-		UpdatedAt:   g.UpdatedAt,
-		Children:    make([]*GoalNode, 0),
+		ID:           g.ID,
+		UserID:       g.UserID,
+		Title:        g.Title,
+		Description:  g.Description,
+		DisplayOrder: g.DisplayOrder,
+		CreatedAt:    g.CreatedAt,
+		UpdatedAt:    g.UpdatedAt,
+		Children:     make([]*GoalNode, 0),
 	}
 
 	if g.ParentID != nil {

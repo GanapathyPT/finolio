@@ -139,6 +139,29 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
 }
 
+// Reorder handles PUT /api/goals/reorder - bulk updates goal display priorities.
+func (h *Handler) Reorder(w http.ResponseWriter, r *http.Request) {
+	userID, err := auth.GetUserID(r)
+	if err != nil {
+		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var req ReorderGoalsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.service.ReorderGoals(r.Context(), userID, req); err != nil {
+		slog.Warn("failed to reorder goals", "user_id", userID, "error", err)
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+}
+
 // AssignAsset handles POST /api/goals/assign-asset to tag or untag an asset.
 func (h *Handler) AssignAsset(w http.ResponseWriter, r *http.Request) {
 	userID, err := auth.GetUserID(r)

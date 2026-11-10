@@ -178,6 +178,7 @@ function GoalForm({
           description: description.trim(),
           target_amount: targetAmount ? parseFloat(targetAmount) : null,
           target_date: targetDate || null,
+          display_order: editingGoal.display_order,
         })
       } else {
         await onSubmitCreate({
@@ -186,6 +187,7 @@ function GoalForm({
           description: description.trim(),
           target_amount: targetAmount ? parseFloat(targetAmount) : null,
           target_date: targetDate || null,
+          display_order: parentGoal ? (parentGoal.children?.length ?? 0) : 0,
         })
       }
       onClose()

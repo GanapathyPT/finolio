@@ -5,7 +5,7 @@ WHERE user_id = ?;
 -- name: ListGoalsByUserID :many
 SELECT * FROM goals
 WHERE user_id = ?
-ORDER BY parent_id ASC NULLS FIRST, created_at ASC;
+ORDER BY parent_id ASC NULLS FIRST, display_order ASC, created_at ASC;
 
 -- name: GetGoalByID :one
 SELECT * FROM goals
@@ -18,9 +18,10 @@ INSERT INTO goals (
     title,
     description,
     target_amount,
-    target_date
+    target_date,
+    display_order
 ) VALUES (
-    ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?
 )
 RETURNING *;
 
@@ -31,9 +32,16 @@ SET parent_id = ?,
     description = ?,
     target_amount = ?,
     target_date = ?,
+    display_order = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ? AND user_id = ?
 RETURNING *;
+
+-- name: UpdateGoalOrder :exec
+UPDATE goals
+SET display_order = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ? AND user_id = ?;
 
 -- name: DeleteGoal :exec
 DELETE FROM goals

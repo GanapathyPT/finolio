@@ -78,6 +78,7 @@ func New(cfg *config.Config, db *sql.DB, queries *store.Queries) *Server {
 			r.Route("/goals", func(r chi.Router) {
 				r.Get("/", goalsHandler.ListTree)
 				r.Post("/", goalsHandler.Create)
+				r.Put("/reorder", goalsHandler.Reorder)
 				r.Post("/assign-asset", goalsHandler.AssignAsset)
 				r.Get("/{id}", goalsHandler.GetByID)
 				r.Put("/{id}", goalsHandler.Update)

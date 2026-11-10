@@ -13,6 +13,7 @@ type GoalNode struct {
 	Description  string      `json:"description"`
 	TargetAmount *float64    `json:"target_amount"`
 	TargetDate   *string     `json:"target_date"`
+	DisplayOrder int64       `json:"display_order"`
 	CreatedAt    time.Time   `json:"created_at"`
 	UpdatedAt    time.Time   `json:"updated_at"`
 	Children     []*GoalNode `json:"children,omitempty"`
@@ -25,6 +26,7 @@ type CreateGoalRequest struct {
 	Description  string   `json:"description"`
 	TargetAmount *float64 `json:"target_amount"`
 	TargetDate   *string  `json:"target_date"`
+	DisplayOrder *int64   `json:"display_order,omitempty"`
 }
 
 // UpdateGoalRequest is the payload for updating an existing goal.
@@ -34,6 +36,18 @@ type UpdateGoalRequest struct {
 	Description  string   `json:"description"`
 	TargetAmount *float64 `json:"target_amount"`
 	TargetDate   *string  `json:"target_date"`
+	DisplayOrder *int64   `json:"display_order,omitempty"`
+}
+
+// ReorderGoalItem represents a single goal order update.
+type ReorderGoalItem struct {
+	ID           int64 `json:"id"`
+	DisplayOrder int64 `json:"display_order"`
+}
+
+// ReorderGoalsRequest is the payload for bulk updating goal priorities.
+type ReorderGoalsRequest struct {
+	Orders []ReorderGoalItem `json:"orders"`
 }
 
 // AssignAssetRequest is the payload for assigning or unassigning an asset to/from a goal.

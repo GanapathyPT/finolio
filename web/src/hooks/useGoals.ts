@@ -5,8 +5,15 @@ import {
   updateGoal,
   deleteGoal,
   assignAssetToGoal,
+  reorderGoals,
 } from '@/api/goals'
-import type { CreateGoalRequest, UpdateGoalRequest, AssignAssetRequest, GoalNode } from '@/types/goals'
+import type {
+  CreateGoalRequest,
+  UpdateGoalRequest,
+  AssignAssetRequest,
+  ReorderGoalsRequest,
+  GoalNode,
+} from '@/types/goals'
 
 export function useGoals() {
   const queryClient = useQueryClient()
@@ -52,6 +59,13 @@ export function useGoals() {
     },
   })
 
+  const reorderMutation = useMutation({
+    mutationFn: (req: ReorderGoalsRequest) => reorderGoals(req),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['goals'] })
+    },
+  })
+
   return {
     goals,
     isLoading,
@@ -62,6 +76,7 @@ export function useGoals() {
     deleteGoal: deleteMutation.mutateAsync,
     assignAsset: assignAssetMutation.mutateAsync,
     isAssigning: assignAssetMutation.isPending,
+    reorderGoals: reorderMutation.mutateAsync,
   }
 }
 

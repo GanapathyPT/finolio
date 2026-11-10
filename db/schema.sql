@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS goals (
     description    TEXT     NOT NULL DEFAULT '',
     target_amount  REAL     NULL,
     target_date    TEXT     NULL,
+    display_order  INTEGER  NOT NULL DEFAULT 0,
     created_at     DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at     DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );

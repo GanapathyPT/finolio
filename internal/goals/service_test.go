@@ -437,3 +437,104 @@ func TestSplitAssetAcrossMultipleGoals(t *testing.T) {
 		t.Fatalf("expected 2 remaining allocations, got %d", len(allocsAfter))
 	}
 }
+
+func TestReorderGoals(t *testing.T) {
+	tempDB := filepath.Join(t.TempDir(), "test_reorder.db")
+	db, err := database.Open(tempDB)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	queries := store.New(db)
+	ctx := context.Background()
+
+	user, err := queries.UpsertUser(ctx, store.UpsertUserParams{
+		KiteID:   "REORDER01",
+		UserName: "Reorder User",
+		Email:    "reorder@example.com",
+	})
+	if err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	service := NewService(db, queries)
+	roots, err := service.GetGoalsTree(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("failed to get goals tree: %v", err)
+	}
+	fireGoal := roots[0]
+
+	// Create 3 sub-goals
+	target1 := 100000.0
+	target2 := 200000.0
+	target3 := 300000.0
+
+	sub1, err := service.CreateGoal(ctx, user.ID, CreateGoalRequest{
+		ParentID:     &fireGoal.ID,
+		Title:        "Priority 1 Subgoal",
+		TargetAmount: &target1,
+		DisplayOrder: ptrInt64(0),
+	})
+	if err != nil {
+		t.Fatalf("failed to create sub1: %v", err)
+	}
+
+	sub2, err := service.CreateGoal(ctx, user.ID, CreateGoalRequest{
+		ParentID:     &fireGoal.ID,
+		Title:        "Priority 2 Subgoal",
+		TargetAmount: &target2,
+		DisplayOrder: ptrInt64(1),
+	})
+	if err != nil {
+		t.Fatalf("failed to create sub2: %v", err)
+	}
+
+	sub3, err := service.CreateGoal(ctx, user.ID, CreateGoalRequest{
+		ParentID:     &fireGoal.ID,
+		Title:        "Priority 3 Subgoal",
+		TargetAmount: &target3,
+		DisplayOrder: ptrInt64(2),
+	})
+	if err != nil {
+		t.Fatalf("failed to create sub3: %v", err)
+	}
+
+	// Reorder sub3 to top priority, sub1 to bottom
+	err = service.ReorderGoals(ctx, user.ID, ReorderGoalsRequest{
+		Orders: []ReorderGoalItem{
+			{ID: sub3.ID, DisplayOrder: 0},
+			{ID: sub2.ID, DisplayOrder: 1},
+			{ID: sub1.ID, DisplayOrder: 2},
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to reorder goals: %v", err)
+	}
+
+	tree, err := service.GetGoalsTree(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("failed to get tree: %v", err)
+	}
+
+	var updatedRoot *GoalNode
+	for _, r := range tree {
+		if r.ID == fireGoal.ID {
+			updatedRoot = r
+			break
+		}
+	}
+	if updatedRoot == nil || len(updatedRoot.Children) != 3 {
+		t.Fatalf("expected 3 children under root")
+	}
+
+	if updatedRoot.Children[0].ID != sub3.ID || updatedRoot.Children[0].DisplayOrder != 0 {
+		t.Errorf("expected first child to be sub3 (id %d), got id %d", sub3.ID, updatedRoot.Children[0].ID)
+	}
+	if updatedRoot.Children[1].ID != sub2.ID || updatedRoot.Children[1].DisplayOrder != 1 {
+		t.Errorf("expected second child to be sub2 (id %d), got id %d", sub2.ID, updatedRoot.Children[1].ID)
+	}
+	if updatedRoot.Children[2].ID != sub1.ID || updatedRoot.Children[2].DisplayOrder != 2 {
+		t.Errorf("expected third child to be sub1 (id %d), got id %d", sub1.ID, updatedRoot.Children[2].ID)
+	}
+}

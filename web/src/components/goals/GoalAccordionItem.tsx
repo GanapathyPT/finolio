@@ -9,11 +9,19 @@ import {
   Calendar,
   ArrowDownRight,
   Edit2,
+  CheckCircle2,
+  Clock,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { DraggableAssetItem } from './DraggableAssetItem'
 import { GoalHorizonArcCard } from './GoalHorizonArcCard'
-import { formatTargetDate, calculateProjectedCorpus, type GoalNode } from '@/types/goals'
+import {
+  formatTargetDate,
+  calculateProjectedCorpus,
+  type GoalNode,
+  type SubGoalAllocation,
+  type ReorderGoalItem,
+} from '@/types/goals'
 import type { UnifiedAsset } from '@/types/unifiedAsset'
 
 function formatCurrency(val: number): string {
@@ -32,6 +40,12 @@ interface GoalAccordionItemProps {
   onDeleteGoal: (goalId: number) => Promise<void>
   onOpenCreateSubgoal: (parentGoal: GoalNode) => void
   onOpenEditGoal: (goal: GoalNode) => void
+  onReorderSubgoals?: (orders: ReorderGoalItem[]) => Promise<void>
+  parentSiblings?: GoalNode[]
+  siblingIndex?: number
+  siblingCount?: number
+  waterfallAllocations?: Map<number, SubGoalAllocation>
+  rootGoalTitle?: string
   depth?: number
 }
 
@@ -43,54 +57,44 @@ export function GoalAccordionItem({
   onDeleteGoal,
   onOpenCreateSubgoal,
   onOpenEditGoal,
+  onReorderSubgoals,
+  parentSiblings,
+  siblingIndex = 0,
+  siblingCount = 1,
+  waterfallAllocations,
+  rootGoalTitle,
   depth = 0,
 }: GoalAccordionItemProps) {
-  const [isOpen, setIsOpen] = useState(depth === 0)
+  const isRoot = depth === 0
+  const [isOpen, setIsOpen] = useState(isRoot)
   const [showAssets, setShowAssets] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
 
+  // Only root goals accept direct asset drops
   const { isOver, setNodeRef } = useDroppable({
     id: `goal-${goal.id}`,
     data: { goalId: goal.id },
+    disabled: !isRoot,
   })
 
-  // Direct allocations assigned to this goal
+  // Collect direct assets assigned to this root goal (including legacy descendant allocations for resilience)
+  const getAllDescendantIds = (node: GoalNode): number[] => {
+    const ids = [node.id]
+    for (const child of node.children || []) {
+      ids.push(...getAllDescendantIds(child))
+    }
+    return ids
+  }
+  const subtreeIds = new Set(getAllDescendantIds(goal))
+
   const directAllocations = allAssets
     .map((a) => {
-      const alloc = a.allocations.find((al) => al.goal_id === goal.id)
+      const alloc = a.allocations.find((al) =>
+        isRoot ? subtreeIds.has(al.goal_id) : al.goal_id === goal.id
+      )
       return alloc ? { asset: a, percentage: alloc.allocation_percentage } : null
     })
     .filter((item): item is { asset: UnifiedAsset; percentage: number } => item !== null)
-
-  // Recursive subtree metrics factoring percentage allocations
-  const getSubtreeMetrics = (node: GoalNode): { corpus: number; invested: number } => {
-    const nodeCorpus = allAssets.reduce((sum, a) => {
-      const alloc = a.allocations.find((al) => al.goal_id === node.id)
-      if (!alloc) return sum
-      return sum + (a.current_value * alloc.allocation_percentage) / 100
-    }, 0)
-    const nodeInvested = allAssets.reduce((sum, a) => {
-      const alloc = a.allocations.find((al) => al.goal_id === node.id)
-      if (!alloc) return sum
-      return sum + (a.average_price * a.quantity * alloc.allocation_percentage) / 100
-    }, 0)
-
-    const childrenMetrics = (node.children || []).reduce(
-      (acc, child) => {
-        const cm = getSubtreeMetrics(child)
-        return {
-          corpus: acc.corpus + cm.corpus,
-          invested: acc.invested + cm.invested,
-        }
-      },
-      { corpus: 0, invested: 0 }
-    )
-
-    return {
-      corpus: nodeCorpus + childrenMetrics.corpus,
-      invested: nodeInvested + childrenMetrics.invested,
-    }
-  }
 
   const directCorpus = directAllocations.reduce(
     (sum, { asset, percentage }) => sum + (asset.current_value * percentage) / 100,
@@ -101,10 +105,12 @@ export function GoalAccordionItem({
     0
   )
 
-  const subtreeMetrics = getSubtreeMetrics(goal)
-  const hasChildren = Boolean(goal.children && goal.children.length > 0)
-  const effectiveCovered = hasChildren ? subtreeMetrics.corpus : directCorpus
-  const effectiveInvested = hasChildren ? subtreeMetrics.invested : directInvested
+  // Waterfall allocation for sub-goals
+  const subAlloc = !isRoot ? waterfallAllocations?.get(goal.id) : undefined
+
+  // Effective metrics for display
+  const effectiveCovered = isRoot ? directCorpus : (subAlloc?.allocatedCorpus ?? 0)
+  const effectiveInvested = isRoot ? directInvested : (subAlloc?.allocatedInvested ?? 0)
   const effectivePnL = effectiveCovered - effectiveInvested
   const effectivePnLPct = effectiveInvested > 0 ? (effectivePnL / effectiveInvested) * 100 : 0
 
@@ -113,9 +119,37 @@ export function GoalAccordionItem({
   const targetGap = isTargetSet ? Math.max(0, target! - effectiveCovered) : null
   const projectedCorpus = calculateProjectedCorpus(target, goal.target_date, 0.07)
 
+  // Priority reordering for sub-goals
+  const priorityNumber = siblingIndex + 1
+  const isFirstChild = siblingIndex === 0
+  const isLastChild = siblingIndex === siblingCount - 1
+
+  const handleMovePriority = async (e: React.MouseEvent, direction: 'up' | 'down') => {
+    e.stopPropagation()
+    if (!parentSiblings || !onReorderSubgoals) return
+
+    const curIdx = parentSiblings.findIndex((s) => s.id === goal.id)
+    if (curIdx === -1) return
+    const targetIdx = direction === 'up' ? curIdx - 1 : curIdx + 1
+    if (targetIdx < 0 || targetIdx >= parentSiblings.length) return
+
+    const reordered = [...parentSiblings]
+    const [moved] = reordered.splice(curIdx, 1)
+    reordered.splice(targetIdx, 0, moved)
+
+    const orders: ReorderGoalItem[] = reordered.map((s, i) => ({
+      id: s.id,
+      display_order: i,
+    }))
+    await onReorderSubgoals(orders)
+  }
+
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!confirm(`Delete goal "${goal.title}"? Assigned assets will be moved to unassigned.`)) {
+    const confirmMsg = isRoot
+      ? `Delete goal "${goal.title}"? Assigned assets will be moved to unassigned.`
+      : `Delete sub-goal "${goal.title}"? Waterfall funds will automatically shift to the next priority sub-goal.`
+    if (!confirm(confirmMsg)) {
       return
     }
     setIsDeleting(true)
@@ -126,6 +160,14 @@ export function GoalAccordionItem({
     }
   }
 
+  // Sort children by display_order ASC, then id ASC
+  const sortedChildren = (goal.children || []).slice().sort((a, b) => {
+    const orderA = a.display_order ?? 0
+    const orderB = b.display_order ?? 0
+    if (orderA !== orderB) return orderA - orderB
+    return a.id - b.id
+  })
+
   return (
     <div
       ref={setNodeRef}
@@ -133,7 +175,7 @@ export function GoalAccordionItem({
         isOver
           ? 'ring-2 ring-primary border-primary bg-primary/5 shadow-md'
           : 'bg-card border-border hover:border-border/80'
-      } ${depth > 0 ? 'ml-4 sm:ml-6 mt-2.5' : 'mt-3'}`}
+      } ${depth > 0 ? 'ml-3 sm:ml-5 mt-2.5' : 'mt-3'}`}
     >
       {/* Accordion Header / Trigger */}
       <div
@@ -154,10 +196,54 @@ export function GoalAccordionItem({
                 {goal.title}
               </span>
 
-              {depth > 0 && (
-                <Badge variant="outline" className="text-[10px] font-normal py-0 h-4.5">
-                  Sub-Goal
-                </Badge>
+              {/* Priority Badge with reordering controls on Sub-goals */}
+              {!isRoot && (
+                <div
+                  className="inline-flex items-center gap-1.5 bg-muted/70 border border-border px-2 py-0.5 rounded-md text-xs font-mono text-muted-foreground"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span className="font-semibold text-foreground">#{priorityNumber}</span>
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Priority</span>
+                  {onReorderSubgoals && siblingCount > 1 && (
+                    <div className="flex items-center gap-0.5 ml-1 border-l border-border/80 pl-1">
+                      <button
+                        type="button"
+                        disabled={isFirstChild}
+                        onClick={(e) => handleMovePriority(e, 'up')}
+                        title="Move up priority (fill first)"
+                        className="p-0.5 rounded hover:bg-background hover:text-foreground text-muted-foreground disabled:opacity-25 disabled:pointer-events-none transition-colors"
+                      >
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isLastChild}
+                        onClick={(e) => handleMovePriority(e, 'down')}
+                        title="Move down priority"
+                        className="p-0.5 rounded hover:bg-background hover:text-foreground text-muted-foreground disabled:opacity-25 disabled:pointer-events-none transition-colors"
+                      >
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Status pill on Sub-goals */}
+              {!isRoot && subAlloc && (
+                subAlloc.status === 'funded' ? (
+                  <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-[10px] font-medium py-0 h-4.5">
+                    100% Funded
+                  </Badge>
+                ) : subAlloc.status === 'partial' ? (
+                  <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 text-[10px] font-medium py-0 h-4.5">
+                    {subAlloc.percentFunded.toFixed(0)}% Funded
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-muted-foreground text-[10px] font-medium py-0 h-4.5">
+                    Queued
+                  </Badge>
+                )
               )}
 
               {goal.target_date && (
@@ -221,69 +307,170 @@ export function GoalAccordionItem({
       {/* Accordion Content Body */}
       {isOpen && (
         <div className="p-3.5 sm:p-4 border-t bg-muted/20 space-y-3.5">
-          {/* Drop indicator if asset is being dragged over this goal */}
-          {isOver && (
+          {/* Drop indicator if asset is being dragged over this root goal */}
+          {isRoot && isOver && (
             <div className="p-3 rounded-lg border-2 border-dashed border-primary bg-primary/10 text-center text-xs font-semibold text-primary flex items-center justify-center gap-2 animate-in fade-in">
               <ArrowDownRight className="w-4 h-4" />
               <span>Drop to link asset to "{goal.title}"</span>
             </div>
           )}
 
-          {/* Orbital Horizon Arc Progress & Metrics Card */}
-          <GoalHorizonArcCard
-            directInvested={effectiveInvested}
-            directPnL={effectivePnL}
-            directPnLPct={effectivePnLPct}
-            effectiveCovered={effectiveCovered}
-            target={target}
-            targetGap={targetGap}
-            targetDate={goal.target_date}
-          />
+          {/* Root Goal: Full Orbital Arc & Compounding Card */}
+          {isRoot && (
+            <GoalHorizonArcCard
+              directInvested={effectiveInvested}
+              directPnL={effectivePnL}
+              directPnLPct={effectivePnLPct}
+              effectiveCovered={effectiveCovered}
+              target={target}
+              targetGap={targetGap}
+              targetDate={goal.target_date}
+            />
+          )}
 
-          {/* Collapsible Assets Toggle */}
-          <div className="flex items-center justify-between pt-1">
-            <button
-              type="button"
-              onClick={() => setShowAssets(!showAssets)}
-              className="text-xs text-muted-foreground hover:text-foreground font-medium flex items-center gap-1.5 py-1 px-2 -ml-2 rounded-md hover:bg-muted transition-colors"
-            >
-              <span>{showAssets ? 'Hide Assets List' : `View Linked Assets (${directAllocations.length})`}</span>
-              {showAssets ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            </button>
-          </div>
-
-          {/* Assigned assets list - only shown when explicitly toggled or when dragging an asset over */}
-          {(showAssets || isOver) && (
-            <div className="space-y-2 pt-1 animate-in fade-in duration-150">
-              {directAllocations.length > 0 ? (
-                <div className="space-y-2">
-                  {directAllocations.map(({ asset, percentage }) => (
-                    <DraggableAssetItem
-                      key={`${goal.id}-${asset.asset_key}`}
-                      asset={asset}
-                      allocationPercentage={percentage}
-                      sourceGoalId={goal.id}
-                      onEditAllocation={() => onEditAllocation?.(asset, goal)}
-                      onUnassign={() => onUnassignAsset(asset, goal.id)}
-                    />
-                  ))}
+          {/* Sub-Goal: Milestone Funding Envelope Card */}
+          {!isRoot && (
+            <div className="p-3.5 sm:p-4 rounded-xl border border-border/70 bg-card/60 backdrop-blur-xs space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <span className="font-semibold text-foreground/80 uppercase tracking-wider text-[10px]">
+                      Milestone Target:
+                    </span>
+                    <span className="font-medium text-foreground">
+                      {target && target > 0 ? formatCurrency(target) : 'Flexible Target'}
+                    </span>
+                  </div>
+                  <div className="text-sm font-semibold tracking-tight text-foreground mt-0.5">
+                    {formatCurrency(subAlloc?.allocatedCorpus ?? 0)}
+                    <span className="text-xs font-normal text-muted-foreground ml-1.5">
+                      {target && target > 0
+                        ? `funded (${(subAlloc?.percentFunded ?? 0).toFixed(1)}%)`
+                        : 'allocated'}
+                    </span>
+                  </div>
                 </div>
-              ) : (
-                <div className="py-6 px-4 rounded-lg border border-dashed text-center text-xs text-muted-foreground bg-card/50">
-                  No assets assigned yet. Drag an asset from the Unassigned Assets panel to link it.
+
+                {/* Status indicator */}
+                <div className="flex items-center gap-2">
+                  {subAlloc?.status === 'funded' ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+                      <CheckCircle2 className="w-3 h-3" /> Fully Funded
+                    </span>
+                  ) : subAlloc?.status === 'partial' ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/25">
+                      <Clock className="w-3 h-3" /> In Progress ({(subAlloc?.percentFunded ?? 0).toFixed(0)}%)
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
+                      Queued (Priority #{priorityNumber})
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Progress bar */}
+              {target && target > 0 && (
+                <div className="space-y-1">
+                  <div className="w-full bg-muted/60 h-2 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-500 rounded-full ${
+                        subAlloc?.status === 'funded'
+                          ? 'bg-emerald-500'
+                          : (subAlloc?.percentFunded ?? 0) > 0
+                          ? 'bg-primary'
+                          : 'bg-transparent'
+                      }`}
+                      style={{ width: `${Math.min(100, subAlloc?.percentFunded ?? 0)}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[11px] text-muted-foreground font-mono">
+                    <span>{formatCurrency(subAlloc?.allocatedCorpus ?? 0)}</span>
+                    <span>Target: {formatCurrency(target)}</span>
+                  </div>
                 </div>
               )}
+
+              {/* Cost Basis & Inherited P&L Breakdown */}
+              <div className="pt-2 border-t border-border/40 grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                <div>
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider block">Invested Basis</span>
+                  <span className="font-mono text-foreground font-medium">
+                    {formatCurrency(subAlloc?.allocatedInvested ?? 0)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider block">Attributed P&L</span>
+                  <span
+                    className={`font-mono font-medium ${
+                      (subAlloc?.allocatedCorpus ?? 0) - (subAlloc?.allocatedInvested ?? 0) >= 0
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-rose-600 dark:text-rose-400'
+                    }`}
+                  >
+                    {formatCurrency((subAlloc?.allocatedCorpus ?? 0) - (subAlloc?.allocatedInvested ?? 0))}
+                  </span>
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider block">Waterfall Source</span>
+                  <span className="text-muted-foreground/80 truncate block text-[11px]" title={`Funded from ${rootGoalTitle || 'Parent Goal'}`}>
+                    From {rootGoalTitle || 'Parent Goal'}
+                  </span>
+                </div>
+              </div>
             </div>
           )}
 
+          {/* Root Goal: Collapsible Assets Toggle & List */}
+          {isRoot && (
+            <>
+              <div className="flex items-center justify-between pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowAssets(!showAssets)}
+                  className="text-xs text-muted-foreground hover:text-foreground font-medium flex items-center gap-1.5 py-1 px-2 -ml-2 rounded-md hover:bg-muted transition-colors"
+                >
+                  <span>{showAssets ? 'Hide Assets List' : `View Linked Assets (${directAllocations.length})`}</span>
+                  {showAssets ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+
+              {(showAssets || isOver) && (
+                <div className="space-y-2 pt-1 animate-in fade-in duration-150">
+                  {directAllocations.length > 0 ? (
+                    <div className="space-y-2">
+                      {directAllocations.map(({ asset, percentage }) => (
+                        <DraggableAssetItem
+                          key={`${goal.id}-${asset.asset_key}`}
+                          asset={asset}
+                          allocationPercentage={percentage}
+                          sourceGoalId={goal.id}
+                          onEditAllocation={() => onEditAllocation?.(asset, goal)}
+                          onUnassign={() => onUnassignAsset(asset, goal.id)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="py-6 px-4 rounded-lg border border-dashed text-center text-xs text-muted-foreground bg-card/50">
+                      No assets assigned yet. Drag an asset from the Unassigned Assets panel to link it.
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
           {/* Nested Sub-Goals */}
-          {goal.children && goal.children.length > 0 && (
+          {sortedChildren.length > 0 && (
             <div className="pt-2 border-t space-y-2">
-              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Sub-Goals ({goal.children.length})
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+                <span>Milestone Sub-Goals ({sortedChildren.length})</span>
+                <span className="text-[11px] font-normal normal-case text-muted-foreground/80">
+                  Funded in priority order
+                </span>
               </div>
               <div className="space-y-2">
-                {goal.children.map((child) => (
+                {sortedChildren.map((child, idx) => (
                   <GoalAccordionItem
                     key={child.id}
                     goal={child}
@@ -293,6 +480,12 @@ export function GoalAccordionItem({
                     onDeleteGoal={onDeleteGoal}
                     onOpenCreateSubgoal={onOpenCreateSubgoal}
                     onOpenEditGoal={onOpenEditGoal}
+                    onReorderSubgoals={onReorderSubgoals}
+                    parentSiblings={sortedChildren}
+                    siblingIndex={idx}
+                    siblingCount={sortedChildren.length}
+                    waterfallAllocations={waterfallAllocations}
+                    rootGoalTitle={rootGoalTitle || goal.title}
                     depth={depth + 1}
                   />
                 ))}

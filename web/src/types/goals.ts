@@ -6,6 +6,7 @@ export interface GoalNode {
   description: string
   target_amount: number | null
   target_date: string | null
+  display_order: number
   created_at: string
   updated_at: string
   children?: GoalNode[]
@@ -17,6 +18,7 @@ export interface CreateGoalRequest {
   description?: string
   target_amount?: number | null
   target_date?: string | null
+  display_order?: number
 }
 
 export interface UpdateGoalRequest {
@@ -25,6 +27,105 @@ export interface UpdateGoalRequest {
   description?: string
   target_amount?: number | null
   target_date?: string | null
+  display_order?: number
+}
+
+export interface ReorderGoalItem {
+  id: number
+  display_order: number
+}
+
+export interface ReorderGoalsRequest {
+  orders: ReorderGoalItem[]
+}
+
+export interface SubGoalAllocation {
+  goalId: number
+  allocatedCorpus: number
+  allocatedInvested: number
+  targetAmount: number
+  percentFunded: number
+  status: 'funded' | 'partial' | 'queued'
+}
+
+/**
+ * Recursively calculates branch-first waterfall funding down a goal hierarchy.
+ * Root goals hold the direct assets. Their accumulated corpus is distributed to
+ * immediate children in priority order (by display_order ASC).
+ * Each child branch recursively funds its own sub-goals with its allocated amount.
+ */
+export function calculateBranchWaterfall(
+  rootGoal: GoalNode,
+  rootCoveredCorpus: number,
+  rootInvestedCapital: number
+): Map<number, SubGoalAllocation> {
+  const result = new Map<number, SubGoalAllocation>()
+
+  const costBasisRatio = rootCoveredCorpus > 0 ? rootInvestedCapital / rootCoveredCorpus : 1
+
+  function getEffectiveTarget(node: GoalNode): number {
+    if (node.target_amount && node.target_amount > 0) {
+      return node.target_amount
+    }
+    if (node.children && node.children.length > 0) {
+      return node.children.reduce((sum, child) => sum + getEffectiveTarget(child), 0)
+    }
+    return 0
+  }
+
+  function distributeToChildren(children: GoalNode[], availableFunds: number) {
+    const sorted = [...children].sort((a, b) => {
+      const orderA = a.display_order ?? 0
+      const orderB = b.display_order ?? 0
+      if (orderA !== orderB) return orderA - orderB
+      return a.id - b.id
+    })
+
+    let remaining = availableFunds
+
+    for (const child of sorted) {
+      const target = getEffectiveTarget(child)
+      let allocated = 0
+
+      if (target > 0) {
+        allocated = Math.min(remaining, target)
+        remaining -= allocated
+      } else {
+        // If no explicit target, allocate whatever is remaining
+        allocated = remaining
+        remaining = 0
+      }
+
+      const percent = target > 0 ? (allocated / target) * 100 : allocated > 0 ? 100 : 0
+      let status: 'funded' | 'partial' | 'queued' = 'queued'
+      if (percent >= 99.99) {
+        status = 'funded'
+      } else if (allocated > 0) {
+        status = 'partial'
+      }
+
+      const invested = allocated * costBasisRatio
+
+      result.set(child.id, {
+        goalId: child.id,
+        allocatedCorpus: allocated,
+        allocatedInvested: invested,
+        targetAmount: target,
+        percentFunded: Math.min(100, percent),
+        status,
+      })
+
+      if (child.children && child.children.length > 0) {
+        distributeToChildren(child.children, allocated)
+      }
+    }
+  }
+
+  if (rootGoal.children && rootGoal.children.length > 0) {
+    distributeToChildren(rootGoal.children, rootCoveredCorpus)
+  }
+
+  return result
 }
 
 export interface AssignAssetRequest {
