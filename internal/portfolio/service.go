@@ -330,20 +330,34 @@ func (s *Service) GetPortfolio(ctx context.Context, userID int64) (*PortfolioRes
 
 func (s *Service) enrichHoldings(ctx context.Context, userID int64, equity []store.Holding, mf []store.MfHolding) ([]HoldingItem, []MFHoldingItem) {
 	goalAssets, _ := s.queries.ListGoalAssetsByUserID(ctx, userID)
-	assetGoalMap := make(map[string]int64, len(goalAssets))
+	assetAllocationsMap := make(map[string][]AssetAllocation, len(goalAssets))
 	for _, ga := range goalAssets {
-		assetGoalMap[ga.AssetType+":"+ga.AssetKey] = ga.GoalID
+		key := ga.AssetType + ":" + ga.AssetKey
+		assetAllocationsMap[key] = append(assetAllocationsMap[key], AssetAllocation{
+			GoalID:               ga.GoalID,
+			AllocationPercentage: ga.AllocationPercentage,
+		})
 	}
 
 	enrichedEquity := make([]HoldingItem, len(equity))
 	for i, h := range equity {
 		key := fmt.Sprintf("%s:%s", h.Tradingsymbol, h.Exchange)
-		item := HoldingItem{
-			Holding:  h,
-			AssetKey: key,
+		allocs := assetAllocationsMap["equity:"+key]
+		if allocs == nil {
+			allocs = []AssetAllocation{}
 		}
-		if gid, ok := assetGoalMap["equity:"+key]; ok {
-			item.GoalID = &gid
+		var totalPercent int64
+		for _, a := range allocs {
+			totalPercent += a.AllocationPercentage
+		}
+		item := HoldingItem{
+			Holding:               h,
+			AssetKey:              key,
+			Allocations:           allocs,
+			TotalAllocatedPercent: totalPercent,
+		}
+		if len(allocs) == 1 && allocs[0].AllocationPercentage == 100 {
+			item.GoalID = &allocs[0].GoalID
 		}
 		enrichedEquity[i] = item
 	}
@@ -351,12 +365,22 @@ func (s *Service) enrichHoldings(ctx context.Context, userID int64, equity []sto
 	enrichedMF := make([]MFHoldingItem, len(mf))
 	for i, m := range mf {
 		key := fmt.Sprintf("%s:%s", m.Folio, m.Fund)
-		item := MFHoldingItem{
-			MfHolding: m,
-			AssetKey:  key,
+		allocs := assetAllocationsMap["mf:"+key]
+		if allocs == nil {
+			allocs = []AssetAllocation{}
 		}
-		if gid, ok := assetGoalMap["mf:"+key]; ok {
-			item.GoalID = &gid
+		var totalPercent int64
+		for _, a := range allocs {
+			totalPercent += a.AllocationPercentage
+		}
+		item := MFHoldingItem{
+			MfHolding:             m,
+			AssetKey:              key,
+			Allocations:           allocs,
+			TotalAllocatedPercent: totalPercent,
+		}
+		if len(allocs) == 1 && allocs[0].AllocationPercentage == 100 {
+			item.GoalID = &allocs[0].GoalID
 		}
 		enrichedMF[i] = item
 	}

@@ -230,11 +230,21 @@ func TestGoalAssetTagging(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get goal assets: %v", err)
 	}
-	if len(assets) != 1 || assets[0].GoalID != goalID || assets[0].AssetKey != "INFY:NSE" {
+	if len(assets) != 1 || assets[0].GoalID != goalID || assets[0].AssetKey != "INFY:NSE" || assets[0].AllocationPercentage != 100 {
 		t.Fatalf("unexpected goal assets: %+v", assets)
 	}
 
-	// 3. Move asset to another goal
+	// 3. Unassign from first goal then assign to other goal
+	err = service.AssignAsset(ctx, user.ID, AssignAssetRequest{
+		AssetType:            "equity",
+		AssetKey:             "INFY:NSE",
+		GoalID:               &goalID,
+		AllocationPercentage: ptrInt64(0),
+	})
+	if err != nil {
+		t.Fatalf("failed to unassign asset from specific goal: %v", err)
+	}
+
 	otherGoalID := roots[1].ID
 	err = service.AssignAsset(ctx, user.ID, AssignAssetRequest{
 		AssetType: "equity",
@@ -250,7 +260,7 @@ func TestGoalAssetTagging(t *testing.T) {
 		t.Fatalf("expected asset moved to other goal, got %+v", assets)
 	}
 
-	// 4. Unassign asset (goal_id = nil) -> moves back to dangling
+	// 4. Unassign asset from all goals (goal_id = nil) -> moves back to dangling
 	err = service.AssignAsset(ctx, user.ID, AssignAssetRequest{
 		AssetType: "equity",
 		AssetKey:  "INFY:NSE",
@@ -263,5 +273,167 @@ func TestGoalAssetTagging(t *testing.T) {
 	assets, err = service.GetGoalAssets(ctx, user.ID)
 	if err != nil || len(assets) != 0 {
 		t.Fatalf("expected 0 goal assets after unassign, got %+v", assets)
+	}
+}
+
+func ptrInt64(v int64) *int64 {
+	return &v
+}
+
+func TestSplitAssetAcrossMultipleGoals(t *testing.T) {
+	tempDB := filepath.Join(t.TempDir(), "test_split_goals.db")
+	db, err := database.Open(tempDB)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	queries := store.New(db)
+	ctx := context.Background()
+
+	user, err := queries.UpsertUser(ctx, store.UpsertUserParams{
+		KiteID:   "SPLIT01",
+		UserName: "Split User",
+		Email:    "split@example.com",
+	})
+	if err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	service := NewService(db, queries)
+
+	roots, err := service.GetGoalsTree(ctx, user.ID)
+	if err != nil || len(roots) < 2 {
+		t.Fatalf("failed to get default goals")
+	}
+	goal1ID := roots[0].ID
+	goal2ID := roots[1].ID
+
+	// 1. Validation: Reject split < 10%
+	err = service.AssignAsset(ctx, user.ID, AssignAssetRequest{
+		AssetType:            "equity",
+		AssetKey:             "TCS:NSE",
+		GoalID:               &goal1ID,
+		AllocationPercentage: ptrInt64(5),
+	})
+	if err == nil {
+		t.Fatal("expected error for allocation < 10%, got nil")
+	}
+
+	// 2. Validation: Reject split not in multiples of 10
+	err = service.AssignAsset(ctx, user.ID, AssignAssetRequest{
+		AssetType:            "equity",
+		AssetKey:             "TCS:NSE",
+		GoalID:               &goal1ID,
+		AllocationPercentage: ptrInt64(25),
+	})
+	if err == nil {
+		t.Fatal("expected error for allocation not in multiple of 10 (25%), got nil")
+	}
+
+	// 3. Assign 60% of TCS:NSE to Goal 1
+	err = service.AssignAsset(ctx, user.ID, AssignAssetRequest{
+		AssetType:            "equity",
+		AssetKey:             "TCS:NSE",
+		GoalID:               &goal1ID,
+		AllocationPercentage: ptrInt64(60),
+	})
+	if err != nil {
+		t.Fatalf("failed to assign 60%% to goal 1: %v", err)
+	}
+
+	// 4. Assign 40% of TCS:NSE to Goal 2
+	err = service.AssignAsset(ctx, user.ID, AssignAssetRequest{
+		AssetType:            "equity",
+		AssetKey:             "TCS:NSE",
+		GoalID:               &goal2ID,
+		AllocationPercentage: ptrInt64(40),
+	})
+	if err != nil {
+		t.Fatalf("failed to assign 40%% to goal 2: %v", err)
+	}
+
+	// 5. Query allocations: both goals should hold TCS
+	allocs, err := queries.GetAssetAllocations(ctx, store.GetAssetAllocationsParams{
+		UserID:    user.ID,
+		AssetType: "equity",
+		AssetKey:  "TCS:NSE",
+	})
+	if err != nil {
+		t.Fatalf("failed to get allocations: %v", err)
+	}
+	if len(allocs) != 2 {
+		t.Fatalf("expected 2 allocations, got %d", len(allocs))
+	}
+	var totalAlloc int64
+	for _, a := range allocs {
+		totalAlloc += a.AllocationPercentage
+	}
+	if totalAlloc != 100 {
+		t.Fatalf("expected total allocation to equal 100, got %d", totalAlloc)
+	}
+
+	// 6. Attempt to assign an additional 10% to another sub-goal (exceeding 100%)
+	subGoal, err := service.CreateGoal(ctx, user.ID, CreateGoalRequest{
+		ParentID: &goal1ID,
+		Title:    "Emergency Cash Fund",
+	})
+	if err != nil {
+		t.Fatalf("failed to create sub-goal: %v", err)
+	}
+
+	err = service.AssignAsset(ctx, user.ID, AssignAssetRequest{
+		AssetType:            "equity",
+		AssetKey:             "TCS:NSE",
+		GoalID:               &subGoal.ID,
+		AllocationPercentage: ptrInt64(10),
+	})
+	if err == nil {
+		t.Fatal("expected error when total allocation exceeds 100%, got nil")
+	}
+
+	// 7. Reduce Goal 1 from 60% to 30% -> frees up 30%
+	err = service.AssignAsset(ctx, user.ID, AssignAssetRequest{
+		AssetType:            "equity",
+		AssetKey:             "TCS:NSE",
+		GoalID:               &goal1ID,
+		AllocationPercentage: ptrInt64(30),
+	})
+	if err != nil {
+		t.Fatalf("failed to update Goal 1 allocation to 30%%: %v", err)
+	}
+
+	// 8. Now assigning 20% to subGoal should succeed
+	err = service.AssignAsset(ctx, user.ID, AssignAssetRequest{
+		AssetType:            "equity",
+		AssetKey:             "TCS:NSE",
+		GoalID:               &subGoal.ID,
+		AllocationPercentage: ptrInt64(20),
+	})
+	if err != nil {
+		t.Fatalf("failed to assign 20%% to subGoal after freeing headroom: %v", err)
+	}
+
+	// 9. Remove from Goal 2 (AllocationPercentage = 0)
+	err = service.AssignAsset(ctx, user.ID, AssignAssetRequest{
+		AssetType:            "equity",
+		AssetKey:             "TCS:NSE",
+		GoalID:               &goal2ID,
+		AllocationPercentage: ptrInt64(0),
+	})
+	if err != nil {
+		t.Fatalf("failed to unassign from Goal 2: %v", err)
+	}
+
+	allocsAfter, err := queries.GetAssetAllocations(ctx, store.GetAssetAllocationsParams{
+		UserID:    user.ID,
+		AssetType: "equity",
+		AssetKey:  "TCS:NSE",
+	})
+	if err != nil {
+		t.Fatalf("failed to get allocations: %v", err)
+	}
+	if len(allocsAfter) != 2 { // Goal 1 (30%) + subGoal (20%) = 50%
+		t.Fatalf("expected 2 remaining allocations, got %d", len(allocsAfter))
 	}
 }

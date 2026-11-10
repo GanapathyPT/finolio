@@ -1,3 +1,8 @@
+export interface AssetAllocation {
+  goal_id: number
+  allocation_percentage: number
+}
+
 export interface UnifiedAsset {
   id: number
   asset_type: 'equity' | 'mf'
@@ -11,5 +16,8 @@ export interface UnifiedAsset {
   pnl: number
   pnl_percentage: number
   goal_id: number | null
+  allocations: AssetAllocation[]
+  total_allocated_percentage: number
+  unallocated_percentage: number
 }
 

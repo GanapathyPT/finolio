@@ -219,3 +219,154 @@ func TestPortfolioSyncFailureSavesFailedSnapshotNoRetry(t *testing.T) {
 		t.Error("expected error message in failed snapshot, got empty")
 	}
 }
+
+func TestPortfolioEnrichmentWithSplitAllocations(t *testing.T) {
+	tempDB := filepath.Join(t.TempDir(), "test_split_portfolio.db")
+	db, err := database.Open(tempDB)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	queries := store.New(db)
+	ctx := context.Background()
+
+	user, err := queries.UpsertUser(ctx, store.UpsertUserParams{
+		KiteID:   "SPLIT_PORT01",
+		UserName: "Split Investor",
+		Email:    "split_investor@example.com",
+	})
+	if err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	_, err = queries.UpsertKiteSession(ctx, store.UpsertKiteSessionParams{
+		UserID:      user.ID,
+		AccessToken: "mock-access-token",
+		PublicToken: "mock-public-token",
+		LoginTime:   time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	mockData := &mockKiteClient{
+		holdings: kiteconnect.Holdings{
+			{
+				Tradingsymbol:   "INFY",
+				Exchange:        "NSE",
+				InstrumentToken: 408065,
+				ISIN:            "INE009A01021",
+				Product:         "CNC",
+				Quantity:        100,
+				AveragePrice:    1400.0,
+				LastPrice:       1500.0,
+			},
+		},
+		mf: kiteconnect.MFHoldings{
+			{
+				Folio:         "12345/67",
+				Fund:          "Parag Parikh Flexi Cap Fund",
+				Tradingsymbol: "INF209K01168",
+				AveragePrice:  50.0,
+				LastPrice:     65.0,
+				Quantity:      200.0,
+			},
+		},
+	}
+
+	factory := func(apiKey, accessToken string) KiteClient {
+		return mockData
+	}
+
+	service := NewService(db, queries, "dummy-key", factory)
+
+	// 1. Initial Sync
+	_, err = service.Sync(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+
+	// 2. Create goals
+	g1, err := queries.CreateGoal(ctx, store.CreateGoalParams{
+		UserID: user.ID,
+		Title:  "Retirement",
+	})
+	if err != nil {
+		t.Fatalf("create goal 1 failed: %v", err)
+	}
+
+	g2, err := queries.CreateGoal(ctx, store.CreateGoalParams{
+		UserID: user.ID,
+		Title:  "House Downpayment",
+	})
+	if err != nil {
+		t.Fatalf("create goal 2 failed: %v", err)
+	}
+
+	// 3. Assign 70% of INFY to Goal 1, 30% to Goal 2
+	_, err = queries.AssignAssetToGoal(ctx, store.AssignAssetToGoalParams{
+		UserID:               user.ID,
+		GoalID:               g1.ID,
+		AssetType:            "equity",
+		AssetKey:             "INFY:NSE",
+		AllocationPercentage: 70,
+	})
+	if err != nil {
+		t.Fatalf("assign 70%% failed: %v", err)
+	}
+
+	_, err = queries.AssignAssetToGoal(ctx, store.AssignAssetToGoalParams{
+		UserID:               user.ID,
+		GoalID:               g2.ID,
+		AssetType:            "equity",
+		AssetKey:             "INFY:NSE",
+		AllocationPercentage: 30,
+	})
+	if err != nil {
+		t.Fatalf("assign 30%% failed: %v", err)
+	}
+
+	// 4. Assign 40% of MF to Goal 1 (leaving 60% unallocated)
+	_, err = queries.AssignAssetToGoal(ctx, store.AssignAssetToGoalParams{
+		UserID:               user.ID,
+		GoalID:               g1.ID,
+		AssetType:            "mf",
+		AssetKey:             "12345/67:Parag Parikh Flexi Cap Fund",
+		AllocationPercentage: 40,
+	})
+	if err != nil {
+		t.Fatalf("assign MF 40%% failed: %v", err)
+	}
+
+	// 5. Query portfolio and verify enrichment
+	port, err := service.GetPortfolio(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("GetPortfolio failed: %v", err)
+	}
+
+	if len(port.EquityHoldings) != 1 {
+		t.Fatalf("expected 1 equity holding, got %d", len(port.EquityHoldings))
+	}
+	eq := port.EquityHoldings[0]
+	if len(eq.Allocations) != 2 {
+		t.Fatalf("expected 2 allocations for INFY, got %d", len(eq.Allocations))
+	}
+	if eq.TotalAllocatedPercent != 100 {
+		t.Fatalf("expected 100%% total allocated for INFY, got %d", eq.TotalAllocatedPercent)
+	}
+
+	if len(port.MFHoldings) != 1 {
+		t.Fatalf("expected 1 MF holding, got %d", len(port.MFHoldings))
+	}
+	mfItem := port.MFHoldings[0]
+	if len(mfItem.Allocations) != 1 {
+		t.Fatalf("expected 1 allocation for MF, got %d", len(mfItem.Allocations))
+	}
+	if mfItem.Allocations[0].AllocationPercentage != 40 {
+		t.Fatalf("expected 40%% allocated for MF, got %d", mfItem.Allocations[0].AllocationPercentage)
+	}
+	if mfItem.TotalAllocatedPercent != 40 {
+		t.Fatalf("expected 40%% total allocated for MF, got %d", mfItem.TotalAllocatedPercent)
+	}
+}

@@ -93,13 +93,14 @@ CREATE TABLE IF NOT EXISTS goals (
 );
 
 CREATE TABLE IF NOT EXISTS goal_assets (
-    id          INTEGER  PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER  NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    goal_id     INTEGER  NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
-    asset_type  TEXT     NOT NULL CHECK(asset_type IN ('equity', 'mf')),
-    asset_key   TEXT     NOT NULL,
-    created_at  DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    UNIQUE(user_id, asset_type, asset_key)
+    id                    INTEGER  PRIMARY KEY AUTOINCREMENT,
+    user_id               INTEGER  NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    goal_id               INTEGER  NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+    asset_type            TEXT     NOT NULL CHECK(asset_type IN ('equity', 'mf')),
+    asset_key             TEXT     NOT NULL,
+    allocation_percentage INTEGER  NOT NULL DEFAULT 100 CHECK(allocation_percentage >= 10 AND allocation_percentage <= 100 AND allocation_percentage % 10 = 0),
+    created_at            DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE(user_id, goal_id, asset_type, asset_key)
 );
 
 CREATE INDEX IF NOT EXISTS idx_holdings_user ON holdings(user_id);

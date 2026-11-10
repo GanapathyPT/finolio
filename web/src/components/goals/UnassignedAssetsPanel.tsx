@@ -26,8 +26,8 @@ export function UnassignedAssetsPanel({ assets }: UnassignedAssetsPanelProps) {
     id: 'unassigned',
   })
 
-  const unassigned = assets.filter((a) => a.goal_id === null)
-  const totalValue = unassigned.reduce((sum, a) => sum + a.current_value, 0)
+  const unassigned = assets.filter((a) => a.unallocated_percentage > 0)
+  const totalValue = unassigned.reduce((sum, a) => sum + (a.current_value * a.unallocated_percentage) / 100, 0)
   const stockCount = unassigned.filter((a) => a.asset_type === 'equity').length
   const mfCount = unassigned.filter((a) => a.asset_type === 'mf').length
 
@@ -138,7 +138,11 @@ export function UnassignedAssetsPanel({ assets }: UnassignedAssetsPanelProps) {
         {filtered.length > 0 ? (
           <div className="space-y-2 max-h-[560px] overflow-y-auto pr-1">
             {filtered.map((asset) => (
-              <DraggableAssetItem key={asset.asset_key} asset={asset} />
+              <DraggableAssetItem
+                key={asset.asset_key}
+                asset={asset}
+                isUnassignedView
+              />
             ))}
           </div>
         ) : (

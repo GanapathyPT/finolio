@@ -8,12 +8,14 @@ description: Use this skill when modifying the database schema, creating or upda
 ## Instructions
 
 1. **Schema**: Maintain `db/schema.sql` as the single source of truth. Add table definitions with explicit constraints, foreign keys, and indexes.
-2. **Queries**: Add or update sqlc-annotated queries in `db/queries/`.
-3. **Generate**: Run `make generate` to regenerate type-safe Go store models.
-4. **Service**: Update domain services and data mapping logic in `internal/` to use the generated methods.
-5. **Verify**: Run `make test && make check` to ensure schema validity and test coverage.
+2. **Fresh Database Assumption (No Backward Compatibility Unless Tagged)**: Unless there is an existing git release tag (e.g. `v1.0.0`), do NOT write complex backward-compatibility migration scripts or temp-table shims. Re-do the schema directly in `db/schema.sql` as if starting with an empty database.
+3. **Queries**: Add or update sqlc-annotated queries in `db/queries/`.
+4. **Generate**: Run `make generate` to regenerate type-safe Go store models.
+5. **Service**: Update domain services and data mapping logic in `internal/` to use the generated methods.
+6. **Verify**: Run `make test && make check` to ensure schema validity and test coverage.
 
 ## Constraints
 
+- Unless a git release tag is available, ignore backward compatibility for the SQL and re-do tables directly as an empty database.
 - Foreign keys are strictly enforced in SQLite; always specify explicit deletion behaviors (such as cascade or set null).
-- Never delete or clear existing goal asset mappings when modifying schema or syncing portfolio data.
+- Never delete or clear existing goal asset mappings when syncing portfolio data.

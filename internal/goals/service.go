@@ -212,7 +212,7 @@ func (s *Service) DeleteGoal(ctx context.Context, userID, goalID int64) error {
 	})
 }
 
-// AssignAsset assigns an equity or MF asset to a goal, or unassigns it if goal_id is nil.
+// AssignAsset assigns an equity or MF asset to a goal, or unassigns it if goal_id is nil or allocation_percentage is 0.
 func (s *Service) AssignAsset(ctx context.Context, userID int64, req AssignAssetRequest) error {
 	if req.AssetType != "equity" && req.AssetType != "mf" {
 		return errors.New("asset_type must be 'equity' or 'mf'")
@@ -222,7 +222,7 @@ func (s *Service) AssignAsset(ctx context.Context, userID int64, req AssignAsset
 	}
 
 	if req.GoalID == nil {
-		return s.queries.UnassignAssetFromGoal(ctx, store.UnassignAssetFromGoalParams{
+		return s.queries.UnassignAssetFromAllGoals(ctx, store.UnassignAssetFromAllGoalsParams{
 			UserID:    userID,
 			AssetType: req.AssetType,
 			AssetKey:  req.AssetKey,
@@ -238,11 +238,52 @@ func (s *Service) AssignAsset(ctx context.Context, userID int64, req AssignAsset
 		return fmt.Errorf("target goal not found: %w", err)
 	}
 
-	_, err = s.queries.AssignAssetToGoal(ctx, store.AssignAssetToGoalParams{
+	// If AllocationPercentage is explicitly 0, unassign from this specific goal
+	if req.AllocationPercentage != nil && *req.AllocationPercentage == 0 {
+		return s.queries.UnassignAssetFromGoal(ctx, store.UnassignAssetFromGoalParams{
+			UserID:    userID,
+			GoalID:    *req.GoalID,
+			AssetType: req.AssetType,
+			AssetKey:  req.AssetKey,
+		})
+	}
+
+	allocation := int64(100)
+	if req.AllocationPercentage != nil {
+		allocation = *req.AllocationPercentage
+	}
+
+	if allocation < 10 || allocation > 100 || allocation%10 != 0 {
+		return errors.New("allocation percentage must be at least 10% and in multiples of 10")
+	}
+
+	// Check total allocation across other goals
+	existingAllocs, err := s.queries.GetAssetAllocations(ctx, store.GetAssetAllocationsParams{
 		UserID:    userID,
-		GoalID:    *req.GoalID,
 		AssetType: req.AssetType,
 		AssetKey:  req.AssetKey,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to check existing asset allocations: %w", err)
+	}
+
+	var otherAllocTotal int64
+	for _, ea := range existingAllocs {
+		if ea.GoalID != *req.GoalID {
+			otherAllocTotal += ea.AllocationPercentage
+		}
+	}
+
+	if otherAllocTotal+allocation > 100 {
+		return fmt.Errorf("total allocation cannot exceed 100%% (%d%% is already allocated to other goals)", otherAllocTotal)
+	}
+
+	_, err = s.queries.AssignAssetToGoal(ctx, store.AssignAssetToGoalParams{
+		UserID:               userID,
+		GoalID:               *req.GoalID,
+		AssetType:            req.AssetType,
+		AssetKey:             req.AssetKey,
+		AllocationPercentage: allocation,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to assign asset to goal: %w", err)

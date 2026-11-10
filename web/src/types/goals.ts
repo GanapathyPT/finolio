@@ -31,5 +31,6 @@ export interface AssignAssetRequest {
   asset_type: 'equity' | 'mf'
   asset_key: string
   goal_id: number | null
+  allocation_percentage?: number
 }
 

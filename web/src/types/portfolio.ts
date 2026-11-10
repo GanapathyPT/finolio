@@ -15,6 +15,11 @@ export interface PortfolioSummary {
   last_synced_at?: string
 }
 
+export interface AssetAllocation {
+  goal_id: number
+  allocation_percentage: number
+}
+
 export interface Holding {
   id: number
   user_id: number
@@ -41,6 +46,8 @@ export interface Holding {
   synced_at: string
   asset_key?: string
   goal_id?: number | null
+  allocations?: AssetAllocation[]
+  total_allocated_percent?: number
 }
 
 export interface MfHolding {
@@ -57,6 +64,8 @@ export interface MfHolding {
   synced_at: string
   asset_key?: string
   goal_id?: number | null
+  allocations?: AssetAllocation[]
+  total_allocated_percent?: number
 }
 
 export interface PortfolioSnapshot {

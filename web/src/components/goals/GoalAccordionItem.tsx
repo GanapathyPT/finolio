@@ -27,7 +27,8 @@ function formatINR(val: number): string {
 interface GoalAccordionItemProps {
   goal: GoalNode
   allAssets: UnifiedAsset[]
-  onUnassignAsset: (asset: UnifiedAsset) => void
+  onUnassignAsset: (asset: UnifiedAsset, goalId: number) => void
+  onEditAllocation?: (asset: UnifiedAsset, goal: GoalNode) => void
   onDeleteGoal: (goalId: number) => Promise<void>
   onOpenCreateSubgoal: (parentGoal: GoalNode) => void
   onOpenEditGoal: (goal: GoalNode) => void
@@ -38,6 +39,7 @@ export function GoalAccordionItem({
   goal,
   allAssets,
   onUnassignAsset,
+  onEditAllocation,
   onDeleteGoal,
   onOpenCreateSubgoal,
   onOpenEditGoal,
@@ -52,14 +54,21 @@ export function GoalAccordionItem({
     data: { goalId: goal.id },
   })
 
-  // Direct assets assigned to this goal
-  const directAssets = allAssets.filter((a) => a.goal_id === goal.id)
+  // Direct allocations assigned to this goal
+  const directAllocations = allAssets
+    .map((a) => {
+      const alloc = a.allocations.find((al) => al.goal_id === goal.id)
+      return alloc ? { asset: a, percentage: alloc.allocation_percentage } : null
+    })
+    .filter((item): item is { asset: UnifiedAsset; percentage: number } => item !== null)
 
-  // Recursive subtree corpus
+  // Recursive subtree corpus factoring percentage allocations
   const getSubtreeCorpus = (node: GoalNode): number => {
-    const nodeCorpus = allAssets
-      .filter((a) => a.goal_id === node.id)
-      .reduce((sum, a) => sum + a.current_value, 0)
+    const nodeCorpus = allAssets.reduce((sum, a) => {
+      const alloc = a.allocations.find((al) => al.goal_id === node.id)
+      if (!alloc) return sum
+      return sum + (a.current_value * alloc.allocation_percentage) / 100
+    }, 0)
     const childrenCorpus = (node.children || []).reduce(
       (sum, child) => sum + getSubtreeCorpus(child),
       0
@@ -67,17 +76,32 @@ export function GoalAccordionItem({
     return nodeCorpus + childrenCorpus
   }
 
-  const directCorpus = directAssets.reduce((sum, a) => sum + a.current_value, 0)
-  const directInvested = directAssets.reduce((sum, a) => sum + a.average_price * a.quantity, 0)
-  const directPnL = directAssets.reduce((sum, a) => sum + a.pnl, 0)
+  const directCorpus = directAllocations.reduce(
+    (sum, { asset, percentage }) => sum + (asset.current_value * percentage) / 100,
+    0
+  )
+  const directInvested = directAllocations.reduce(
+    (sum, { asset, percentage }) => sum + (asset.average_price * asset.quantity * percentage) / 100,
+    0
+  )
+  const directPnL = directAllocations.reduce(
+    (sum, { asset, percentage }) => sum + (asset.pnl * percentage) / 100,
+    0
+  )
   const directPnLPct = directInvested > 0 ? (directPnL / directInvested) * 100 : 0
 
-  const equityAssets = directAssets.filter((a) => a.asset_type === 'equity')
-  const equityVal = equityAssets.reduce((sum, a) => sum + a.current_value, 0)
+  const equityAllocations = directAllocations.filter(({ asset }) => asset.asset_type === 'equity')
+  const equityVal = equityAllocations.reduce(
+    (sum, { asset, percentage }) => sum + (asset.current_value * percentage) / 100,
+    0
+  )
   const equityPct = directCorpus > 0 ? Math.round((equityVal / directCorpus) * 100) : 0
 
-  const mfAssets = directAssets.filter((a) => a.asset_type === 'mf')
-  const mfVal = mfAssets.reduce((sum, a) => sum + a.current_value, 0)
+  const mfAllocations = directAllocations.filter(({ asset }) => asset.asset_type === 'mf')
+  const mfVal = mfAllocations.reduce(
+    (sum, { asset, percentage }) => sum + (asset.current_value * percentage) / 100,
+    0
+  )
   const mfPct = directCorpus > 0 ? Math.round((mfVal / directCorpus) * 100) : 0
 
   const totalSubtreeCorpus = getSubtreeCorpus(goal)
@@ -174,7 +198,7 @@ export function GoalAccordionItem({
               </div>
             ) : (
               <div className="text-[11px] text-muted-foreground font-mono">
-                {directAssets.length} {directAssets.length === 1 ? 'asset' : 'assets'}
+                {directAllocations.length} {directAllocations.length === 1 ? 'asset' : 'assets'}
               </div>
             )}
           </div>
@@ -275,7 +299,7 @@ export function GoalAccordionItem({
               onClick={() => setShowAssets(!showAssets)}
               className="text-xs text-muted-foreground hover:text-foreground font-medium flex items-center gap-1.5 py-1 px-2 -ml-2 rounded-md hover:bg-muted transition-colors"
             >
-              <span>{showAssets ? 'Hide Assets List' : `View Linked Assets (${directAssets.length})`}</span>
+              <span>{showAssets ? 'Hide Assets List' : `View Linked Assets (${directAllocations.length})`}</span>
               {showAssets ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
           </div>
@@ -283,13 +307,15 @@ export function GoalAccordionItem({
           {/* Assigned assets list - only shown when explicitly toggled or when dragging an asset over */}
           {(showAssets || isOver) && (
             <div className="space-y-2 pt-1 animate-in fade-in duration-150">
-              {directAssets.length > 0 ? (
+              {directAllocations.length > 0 ? (
                 <div className="space-y-2">
-                  {directAssets.map((asset) => (
+                  {directAllocations.map(({ asset, percentage }) => (
                     <DraggableAssetItem
-                      key={asset.asset_key}
+                      key={`${goal.id}-${asset.asset_key}`}
                       asset={asset}
-                      onUnassign={() => onUnassignAsset(asset)}
+                      allocationPercentage={percentage}
+                      onEditAllocation={() => onEditAllocation?.(asset, goal)}
+                      onUnassign={() => onUnassignAsset(asset, goal.id)}
                     />
                   ))}
                 </div>
@@ -314,6 +340,7 @@ export function GoalAccordionItem({
                     goal={child}
                     allAssets={allAssets}
                     onUnassignAsset={onUnassignAsset}
+                    onEditAllocation={onEditAllocation}
                     onDeleteGoal={onDeleteGoal}
                     onOpenCreateSubgoal={onOpenCreateSubgoal}
                     onOpenEditGoal={onOpenEditGoal}

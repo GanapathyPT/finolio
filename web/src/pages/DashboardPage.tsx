@@ -26,6 +26,7 @@ import { UnassignedAssetsPanel } from '@/components/goals/UnassignedAssetsPanel'
 import { GoalAccordionItem } from '@/components/goals/GoalAccordionItem'
 import { DraggableAssetItem } from '@/components/goals/DraggableAssetItem'
 import { GoalDialog } from '@/components/goals/GoalDialog'
+import { SplitAllocationDialog } from '@/components/goals/SplitAllocationDialog'
 import type { GoalNode, CreateGoalRequest, UpdateGoalRequest } from '@/types/goals'
 import type { UnifiedAsset } from '@/types/unifiedAsset'
 
@@ -57,6 +58,11 @@ export function DashboardPage() {
   const [parentGoal, setParentGoal] = useState<GoalNode | null>(null)
   const [editingGoal, setEditingGoal] = useState<GoalNode | null>(null)
 
+  // Split Allocation Dialog states
+  const [splitDialogOpen, setSplitDialogOpen] = useState(false)
+  const [splitAsset, setSplitAsset] = useState<UnifiedAsset | null>(null)
+  const [splitGoal, setSplitGoal] = useState<GoalNode | null>(null)
+
   // Configure pointer sensor with activation distance to avoid accidental drags on click
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -70,6 +76,18 @@ export function DashboardPage() {
   const equityHoldings = portfolio?.equity_holdings
   const mfHoldings = portfolio?.mf_holdings
 
+  // Helper to find goal node by ID in tree
+  const findGoalInTree = (nodes: GoalNode[], id: number): GoalNode | null => {
+    for (const n of nodes) {
+      if (n.id === id) return n
+      if (n.children && n.children.length > 0) {
+        const found = findGoalInTree(n.children, id)
+        if (found) return found
+      }
+    }
+    return null
+  }
+
   // Combine equity and mutual funds into unified draggable assets
   const unifiedAssets: UnifiedAsset[] = useMemo(() => {
     const list: UnifiedAsset[] = []
@@ -77,6 +95,14 @@ export function DashboardPage() {
     equityHoldings?.forEach((h) => {
       const curVal = h.quantity * h.last_price
       const pnlPct = h.average_price > 0 ? ((h.last_price - h.average_price) / h.average_price) * 100 : 0
+      const allocs = h.allocations && h.allocations.length > 0
+        ? h.allocations
+        : h.goal_id !== null && h.goal_id !== undefined
+        ? [{ goal_id: h.goal_id, allocation_percentage: 100 }]
+        : []
+      const totalPercent = h.total_allocated_percent ?? allocs.reduce((s, a) => s + a.allocation_percentage, 0)
+      const unalloc = Math.max(0, 100 - totalPercent)
+
       list.push({
         id: h.id,
         asset_type: 'equity',
@@ -89,13 +115,24 @@ export function DashboardPage() {
         current_value: curVal,
         pnl: h.pnl,
         pnl_percentage: pnlPct,
-        goal_id: h.goal_id ?? null,
+        goal_id: h.goal_id ?? (allocs.length === 1 && allocs[0].allocation_percentage === 100 ? allocs[0].goal_id : null),
+        allocations: allocs,
+        total_allocated_percentage: totalPercent,
+        unallocated_percentage: unalloc,
       })
     })
 
     mfHoldings?.forEach((m) => {
       const curVal = m.quantity * m.last_price
       const pnlPct = m.average_price > 0 ? ((m.last_price - m.average_price) / m.average_price) * 100 : 0
+      const allocs = m.allocations && m.allocations.length > 0
+        ? m.allocations
+        : m.goal_id !== null && m.goal_id !== undefined
+        ? [{ goal_id: m.goal_id, allocation_percentage: 100 }]
+        : []
+      const totalPercent = m.total_allocated_percent ?? allocs.reduce((s, a) => s + a.allocation_percentage, 0)
+      const unalloc = Math.max(0, 100 - totalPercent)
+
       list.push({
         id: m.id,
         asset_type: 'mf',
@@ -108,7 +145,10 @@ export function DashboardPage() {
         current_value: curVal,
         pnl: m.pnl,
         pnl_percentage: pnlPct,
-        goal_id: m.goal_id ?? null,
+        goal_id: m.goal_id ?? (allocs.length === 1 && allocs[0].allocation_percentage === 100 ? allocs[0].goal_id : null),
+        allocations: allocs,
+        total_allocated_percentage: totalPercent,
+        unallocated_percentage: unalloc,
       })
     })
 
@@ -119,7 +159,7 @@ export function DashboardPage() {
   if (!user) return null
 
   const hasAssets = (equityHoldings && equityHoldings.length > 0) || (mfHoldings && mfHoldings.length > 0)
-  const hasUnassignedAssets = unifiedAssets.some((a) => a.goal_id === null)
+  const hasUnassignedAssets = unifiedAssets.some((a) => a.unallocated_percentage > 0)
 
   const handleSync = async (e?: React.MouseEvent) => {
     e?.preventDefault()
@@ -156,7 +196,7 @@ export function DashboardPage() {
 
     try {
       if (overId === 'unassigned') {
-        if (asset.goal_id !== null) {
+        if (asset.allocations.length > 0) {
           await assignAsset({
             asset_type: asset.asset_type,
             asset_key: asset.asset_key,
@@ -165,12 +205,21 @@ export function DashboardPage() {
         }
       } else if (overId.startsWith('goal-')) {
         const targetGoalId = parseInt(overId.replace('goal-', ''), 10)
-        if (!isNaN(targetGoalId) && targetGoalId !== asset.goal_id) {
-          await assignAsset({
-            asset_type: asset.asset_type,
-            asset_key: asset.asset_key,
-            goal_id: targetGoalId,
-          })
+        if (!isNaN(targetGoalId)) {
+          const targetGoal = findGoalInTree(goals, targetGoalId)
+          if (!targetGoal) return
+
+          const existingAlloc = asset.allocations.find((a) => a.goal_id === targetGoalId)
+          const available = (existingAlloc?.allocation_percentage ?? 0) + asset.unallocated_percentage
+
+          if (available < 10) {
+            setErrorMessage(`Cannot allocate "${asset.title}": 100% is already allocated across other goals. Adjust existing allocations first.`)
+            return
+          }
+
+          setSplitAsset(asset)
+          setSplitGoal(targetGoal)
+          setSplitDialogOpen(true)
         }
       }
     } catch (err: unknown) {
@@ -182,18 +231,42 @@ export function DashboardPage() {
     }
   }
 
-  const handleUnassignAsset = async (asset: UnifiedAsset) => {
+  const handleUnassignAsset = async (asset: UnifiedAsset, goalId?: number) => {
     try {
-      await assignAsset({
-        asset_type: asset.asset_type,
-        asset_key: asset.asset_key,
-        goal_id: null,
-      })
+      if (goalId !== undefined) {
+        await assignAsset({
+          asset_type: asset.asset_type,
+          asset_key: asset.asset_key,
+          goal_id: goalId,
+          allocation_percentage: 0,
+        })
+      } else {
+        await assignAsset({
+          asset_type: asset.asset_type,
+          asset_key: asset.asset_key,
+          goal_id: null,
+        })
+      }
     } catch (err: unknown) {
       if (err instanceof Error) {
         setErrorMessage(err.message)
       }
     }
+  }
+
+  const handleEditAllocation = (asset: UnifiedAsset, goal: GoalNode) => {
+    setSplitAsset(asset)
+    setSplitGoal(goal)
+    setSplitDialogOpen(true)
+  }
+
+  const handleConfirmSplit = async (asset: UnifiedAsset, goalId: number, percentage: number) => {
+    await assignAsset({
+      asset_type: asset.asset_type,
+      asset_key: asset.asset_key,
+      goal_id: goalId,
+      allocation_percentage: percentage,
+    })
   }
 
   const handleOpenCreateRootGoal = () => {
@@ -332,6 +405,7 @@ export function DashboardPage() {
                           goal={goal}
                           allAssets={unifiedAssets}
                           onUnassignAsset={handleUnassignAsset}
+                          onEditAllocation={handleEditAllocation}
                           onDeleteGoal={handleDeleteGoal}
                           onOpenCreateSubgoal={handleOpenCreateSubgoal}
                           onOpenEditGoal={handleOpenEditGoal}
@@ -390,6 +464,7 @@ export function DashboardPage() {
                         goal={goal}
                         allAssets={unifiedAssets}
                         onUnassignAsset={handleUnassignAsset}
+                        onEditAllocation={handleEditAllocation}
                         onDeleteGoal={handleDeleteGoal}
                         onOpenCreateSubgoal={handleOpenCreateSubgoal}
                         onOpenEditGoal={handleOpenEditGoal}
@@ -481,6 +556,19 @@ export function DashboardPage() {
           onSubmitUpdate={handleUpdateGoalSubmit}
           parentGoal={parentGoal}
           editingGoal={editingGoal}
+        />
+
+        {/* Split Allocation Dialog */}
+        <SplitAllocationDialog
+          isOpen={splitDialogOpen}
+          onClose={() => {
+            setSplitDialogOpen(false)
+            setSplitAsset(null)
+            setSplitGoal(null)
+          }}
+          asset={splitAsset}
+          goal={splitGoal}
+          onConfirm={handleConfirmSplit}
         />
       </div>
     </DndContext>

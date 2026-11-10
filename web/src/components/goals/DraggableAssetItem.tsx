@@ -5,6 +5,7 @@ import {
   TrendingDown,
   Layers,
   PieChart,
+  Percent,
   X,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -25,17 +26,27 @@ function formatPercent(val: number): string {
 
 interface DraggableAssetItemProps {
   asset: UnifiedAsset
+  allocationPercentage?: number
   onUnassign?: (asset: UnifiedAsset) => void
+  onEditAllocation?: (asset: UnifiedAsset) => void
   isOverlay?: boolean
+  isUnassignedView?: boolean
 }
 
 export function DraggableAssetItem({
   asset,
+  allocationPercentage,
   onUnassign,
+  onEditAllocation,
   isOverlay = false,
+  isUnassignedView = false,
 }: DraggableAssetItemProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: asset.asset_key,
+    id: isUnassignedView
+      ? `unassigned-${asset.asset_key}`
+      : allocationPercentage !== undefined
+      ? `goal-asset-${asset.asset_key}`
+      : asset.asset_key,
     data: asset,
     disabled: isOverlay,
   })
@@ -48,6 +59,40 @@ export function DraggableAssetItem({
 
   const isProfit = asset.pnl >= 0
   const isEquity = asset.asset_type === 'equity'
+
+  // Calculate values based on context
+  let displayValue = asset.current_value
+  let displayQty = asset.quantity
+  let splitBadge: React.ReactNode = null
+
+  if (allocationPercentage !== undefined) {
+    displayValue = (asset.current_value * allocationPercentage) / 100
+    displayQty = (asset.quantity * allocationPercentage) / 100
+    splitBadge = (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          onEditAllocation?.(asset)
+        }}
+        title="Adjust split allocation"
+        className="inline-flex items-center gap-1 text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors"
+      >
+        <Percent className="w-2.5 h-2.5" />
+        <span>{allocationPercentage}%</span>
+      </button>
+    )
+  } else if (isUnassignedView && asset.total_allocated_percentage > 0) {
+    displayValue = (asset.current_value * asset.unallocated_percentage) / 100
+    displayQty = (asset.quantity * asset.unallocated_percentage) / 100
+    splitBadge = (
+      <span className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+        <span>{asset.unallocated_percentage}% unallocated</span>
+      </span>
+    )
+  }
+
+  const formattedQty = isEquity ? Math.round(displayQty) : displayQty.toFixed(3)
 
   return (
     <div
@@ -73,7 +118,7 @@ export function DraggableAssetItem({
 
         <div className="space-y-0.5 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold text-sm tracking-tight text-foreground truncate max-w-[150px] sm:max-w-[200px]">
+            <span className="font-semibold text-sm tracking-tight text-foreground truncate max-w-[150px] sm:max-w-[180px]">
               {asset.title}
             </span>
             <Badge
@@ -87,10 +132,12 @@ export function DraggableAssetItem({
               {isEquity ? <Layers className="w-2.5 h-2.5" /> : <PieChart className="w-2.5 h-2.5" />}
               {isEquity ? 'Stock' : 'MF'}
             </Badge>
+
+            {splitBadge}
           </div>
 
           <p className="text-xs text-muted-foreground truncate font-mono">
-            {asset.quantity} {isEquity ? 'qty' : 'units'} • {formatINR(asset.last_price)}
+            {formattedQty} {isEquity ? 'qty' : 'units'} • {formatINR(asset.last_price)}
           </p>
         </div>
       </div>
@@ -98,7 +145,7 @@ export function DraggableAssetItem({
       <div className="flex items-center gap-2.5 shrink-0">
         <div className="text-right">
           <div className="font-mono font-semibold text-sm tracking-tight text-foreground">
-            {formatINR(asset.current_value)}
+            {formatINR(displayValue)}
           </div>
           <div
             className={`inline-flex items-center gap-0.5 text-xs font-mono font-medium ${

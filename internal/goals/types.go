@@ -38,7 +38,8 @@ type UpdateGoalRequest struct {
 
 // AssignAssetRequest is the payload for assigning or unassigning an asset to/from a goal.
 type AssignAssetRequest struct {
-	AssetType string `json:"asset_type"` // "equity" or "mf"
-	AssetKey  string `json:"asset_key"`  // e.g. "INFY:NSE" or "folio:fund"
-	GoalID    *int64 `json:"goal_id"`    // if nil, unassigns from goal (moves to dangling)
+	AssetType            string `json:"asset_type"`                      // "equity" or "mf"
+	AssetKey             string `json:"asset_key"`                       // e.g. "INFY:NSE" or "folio:fund"
+	GoalID               *int64 `json:"goal_id"`                         // target goal id, or nil to unassign from all goals
+	AllocationPercentage *int64 `json:"allocation_percentage,omitempty"` // 10 to 100 in multiples of 10. If 0 with GoalID, unassigns from that goal. If nil, defaults to 100.
 }
