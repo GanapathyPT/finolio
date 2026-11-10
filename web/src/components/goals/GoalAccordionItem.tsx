@@ -7,22 +7,14 @@ import {
   Plus,
   Trash2,
   Calendar,
-  CheckCircle2,
   ArrowDownRight,
   Edit2,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { DraggableAssetItem } from './DraggableAssetItem'
-import type { GoalNode } from '@/types/goals'
+import { GoalHorizonArcCard } from './GoalHorizonArcCard'
+import { formatTargetDate, type GoalNode } from '@/types/goals'
 import type { UnifiedAsset } from '@/types/unifiedAsset'
-
-function formatINR(val: number): string {
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 0,
-  }).format(val)
-}
 
 interface GoalAccordionItemProps {
   goal: GoalNode
@@ -62,18 +54,34 @@ export function GoalAccordionItem({
     })
     .filter((item): item is { asset: UnifiedAsset; percentage: number } => item !== null)
 
-  // Recursive subtree corpus factoring percentage allocations
-  const getSubtreeCorpus = (node: GoalNode): number => {
+  // Recursive subtree metrics factoring percentage allocations
+  const getSubtreeMetrics = (node: GoalNode): { corpus: number; invested: number } => {
     const nodeCorpus = allAssets.reduce((sum, a) => {
       const alloc = a.allocations.find((al) => al.goal_id === node.id)
       if (!alloc) return sum
       return sum + (a.current_value * alloc.allocation_percentage) / 100
     }, 0)
-    const childrenCorpus = (node.children || []).reduce(
-      (sum, child) => sum + getSubtreeCorpus(child),
-      0
+    const nodeInvested = allAssets.reduce((sum, a) => {
+      const alloc = a.allocations.find((al) => al.goal_id === node.id)
+      if (!alloc) return sum
+      return sum + (a.average_price * a.quantity * alloc.allocation_percentage) / 100
+    }, 0)
+
+    const childrenMetrics = (node.children || []).reduce(
+      (acc, child) => {
+        const cm = getSubtreeMetrics(child)
+        return {
+          corpus: acc.corpus + cm.corpus,
+          invested: acc.invested + cm.invested,
+        }
+      },
+      { corpus: 0, invested: 0 }
     )
-    return nodeCorpus + childrenCorpus
+
+    return {
+      corpus: nodeCorpus + childrenMetrics.corpus,
+      invested: nodeInvested + childrenMetrics.invested,
+    }
   }
 
   const directCorpus = directAllocations.reduce(
@@ -84,31 +92,17 @@ export function GoalAccordionItem({
     (sum, { asset, percentage }) => sum + (asset.average_price * asset.quantity * percentage) / 100,
     0
   )
-  const directPnL = directAllocations.reduce(
-    (sum, { asset, percentage }) => sum + (asset.pnl * percentage) / 100,
-    0
-  )
-  const directPnLPct = directInvested > 0 ? (directPnL / directInvested) * 100 : 0
 
-  const equityAllocations = directAllocations.filter(({ asset }) => asset.asset_type === 'equity')
-  const equityVal = equityAllocations.reduce(
-    (sum, { asset, percentage }) => sum + (asset.current_value * percentage) / 100,
-    0
-  )
-  const equityPct = directCorpus > 0 ? Math.round((equityVal / directCorpus) * 100) : 0
-
-  const mfAllocations = directAllocations.filter(({ asset }) => asset.asset_type === 'mf')
-  const mfVal = mfAllocations.reduce(
-    (sum, { asset, percentage }) => sum + (asset.current_value * percentage) / 100,
-    0
-  )
-  const mfPct = directCorpus > 0 ? Math.round((mfVal / directCorpus) * 100) : 0
-
-  const totalSubtreeCorpus = getSubtreeCorpus(goal)
+  const subtreeMetrics = getSubtreeMetrics(goal)
+  const hasChildren = Boolean(goal.children && goal.children.length > 0)
+  const effectiveCovered = hasChildren ? subtreeMetrics.corpus : directCorpus
+  const effectiveInvested = hasChildren ? subtreeMetrics.invested : directInvested
+  const effectivePnL = effectiveCovered - effectiveInvested
+  const effectivePnLPct = effectiveInvested > 0 ? (effectivePnL / effectiveInvested) * 100 : 0
 
   const target = goal.target_amount
-  const progressPct = target && target > 0 ? Math.min(100, (totalSubtreeCorpus / target) * 100) : null
-  const targetGap = target ? Math.max(0, target - totalSubtreeCorpus) : null
+  const isTargetSet = Boolean(target && target > 0)
+  const targetGap = isTargetSet ? Math.max(0, target! - effectiveCovered) : null
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -160,7 +154,7 @@ export function GoalAccordionItem({
               {goal.target_date && (
                 <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground font-mono">
                   <Calendar className="w-3 h-3" />
-                  {goal.target_date}
+                  {formatTargetDate(goal.target_date)}
                 </span>
               )}
             </div>
@@ -173,67 +167,36 @@ export function GoalAccordionItem({
           </div>
         </div>
 
-        {/* Financial Metrics & Actions */}
-        <div className="flex items-center justify-between md:justify-end gap-3.5 shrink-0 pl-6 md:pl-0">
-          <div className="text-right space-y-1 min-w-[130px]">
-            <div className="flex items-center justify-end gap-1.5 font-mono font-bold text-sm text-foreground">
-              <span>{formatINR(totalSubtreeCorpus)}</span>
-              {progressPct !== null && progressPct >= 100 && (
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-              )}
-            </div>
+        {/* Action buttons */}
+        <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={() => onOpenCreateSubgoal(goal)}
+            title="Add a nested sub-goal"
+            className="p-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted text-xs flex items-center gap-1 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Sub-Goal</span>
+          </button>
 
-            {target && target > 0 ? (
-              <div className="space-y-1">
-                <div className="flex items-center justify-end gap-1.5 text-[11px] font-mono text-muted-foreground">
-                  <span>Target: {formatINR(target)}</span>
-                  <span className="font-medium text-foreground">{progressPct?.toFixed(0)}%</span>
-                </div>
-                <div className="w-28 sm:w-36 h-1.5 bg-muted rounded-full overflow-hidden ml-auto">
-                  <div
-                    className="h-full bg-primary rounded-full transition-all duration-300"
-                    style={{ width: `${Math.min(100, progressPct ?? 0)}%` }}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="text-[11px] text-muted-foreground font-mono">
-                {directAllocations.length} {directAllocations.length === 1 ? 'asset' : 'assets'}
-              </div>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={() => onOpenEditGoal(goal)}
+            title="Edit goal"
+            className="p-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+          </button>
 
-          {/* Action buttons */}
-          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              onClick={() => onOpenCreateSubgoal(goal)}
-              title="Add a nested sub-goal"
-              className="p-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted text-xs flex items-center gap-1 transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Sub-Goal</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => onOpenEditGoal(goal)}
-              title="Edit goal"
-              className="p-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            >
-              <Edit2 className="w-3.5 h-3.5" />
-            </button>
-
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={isDeleting}
-              title="Delete goal"
-              className="p-1.5 rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive/30 hover:bg-destructive/10 transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={isDeleting}
+            title="Delete goal"
+            className="p-1.5 rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive/30 hover:bg-destructive/10 transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
 
@@ -248,49 +211,15 @@ export function GoalAccordionItem({
             </div>
           )}
 
-          {/* Goal Analytics Overview */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            <div className="p-3 bg-card rounded-lg border text-xs space-y-1">
-              <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">Invested Capital</div>
-              <div className="font-mono font-semibold text-sm text-foreground">{formatINR(directInvested)}</div>
-            </div>
-            <div className="p-3 bg-card rounded-lg border text-xs space-y-1">
-              <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">Direct Corpus</div>
-              <div className="font-mono font-semibold text-sm text-foreground">{formatINR(directCorpus)}</div>
-            </div>
-            <div className="p-3 bg-card rounded-lg border text-xs space-y-1">
-              <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">Goal Returns</div>
-              <div className={`font-mono font-semibold text-sm ${directPnL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                {formatINR(directPnL)} ({directPnL >= 0 ? '+' : ''}{directPnLPct.toFixed(1)}%)
-              </div>
-            </div>
-            <div className="p-3 bg-card rounded-lg border text-xs space-y-1">
-              <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">Target Gap</div>
-              <div className="font-mono font-semibold text-sm text-foreground">
-                {targetGap !== null ? formatINR(targetGap) : 'Open-Ended'}
-              </div>
-            </div>
-          </div>
-
-          {/* Asset Allocation Breakdown (Equity vs Mutual Funds) */}
-          {directCorpus > 0 && (
-            <div className="p-3 bg-card rounded-lg border text-xs space-y-2">
-              <div className="flex items-center justify-between text-[11px] text-muted-foreground font-medium flex-wrap gap-2">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-sky-500 inline-block" />
-                  Stocks: {equityPct}% ({formatINR(equityVal)})
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
-                  Mutual Funds: {mfPct}% ({formatINR(mfVal)})
-                </span>
-              </div>
-              <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden flex">
-                <div className="bg-sky-500 h-full transition-all duration-300" style={{ width: `${equityPct}%` }} />
-                <div className="bg-amber-500 h-full transition-all duration-300" style={{ width: `${mfPct}%` }} />
-              </div>
-            </div>
-          )}
+          {/* Orbital Horizon Arc Progress & Metrics Card */}
+          <GoalHorizonArcCard
+            directInvested={effectiveInvested}
+            directPnL={effectivePnL}
+            directPnLPct={effectivePnLPct}
+            effectiveCovered={effectiveCovered}
+            target={target}
+            targetGap={targetGap}
+          />
 
           {/* Collapsible Assets Toggle */}
           <div className="flex items-center justify-between pt-1">

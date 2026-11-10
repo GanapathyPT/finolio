@@ -94,7 +94,9 @@ export function DashboardPage() {
 
     equityHoldings?.forEach((h) => {
       const curVal = h.quantity * h.last_price
-      const pnlPct = h.average_price > 0 ? ((h.last_price - h.average_price) / h.average_price) * 100 : 0
+      const invVal = h.quantity * h.average_price
+      const pnl = h.pnl !== undefined && h.pnl !== null && h.pnl !== 0 ? h.pnl : (curVal - invVal)
+      const pnlPct = invVal > 0 ? (pnl / invVal) * 100 : 0
       const allocs = h.allocations && h.allocations.length > 0
         ? h.allocations
         : h.goal_id !== null && h.goal_id !== undefined
@@ -113,7 +115,7 @@ export function DashboardPage() {
         average_price: h.average_price,
         last_price: h.last_price,
         current_value: curVal,
-        pnl: h.pnl,
+        pnl: pnl,
         pnl_percentage: pnlPct,
         goal_id: h.goal_id ?? (allocs.length === 1 && allocs[0].allocation_percentage === 100 ? allocs[0].goal_id : null),
         allocations: allocs,
@@ -124,7 +126,9 @@ export function DashboardPage() {
 
     mfHoldings?.forEach((m) => {
       const curVal = m.quantity * m.last_price
-      const pnlPct = m.average_price > 0 ? ((m.last_price - m.average_price) / m.average_price) * 100 : 0
+      const invVal = m.quantity * m.average_price
+      const pnl = m.pnl !== undefined && m.pnl !== null && m.pnl !== 0 ? m.pnl : (curVal - invVal)
+      const pnlPct = invVal > 0 ? (pnl / invVal) * 100 : 0
       const allocs = m.allocations && m.allocations.length > 0
         ? m.allocations
         : m.goal_id !== null && m.goal_id !== undefined
@@ -143,7 +147,7 @@ export function DashboardPage() {
         average_price: m.average_price,
         last_price: m.last_price,
         current_value: curVal,
-        pnl: m.pnl,
+        pnl: pnl,
         pnl_percentage: pnlPct,
         goal_id: m.goal_id ?? (allocs.length === 1 && allocs[0].allocation_percentage === 100 ? allocs[0].goal_id : null),
         allocations: allocs,

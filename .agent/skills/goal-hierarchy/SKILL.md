@@ -11,9 +11,12 @@ description: Use this skill when working on financial goals, sub-goals, hierarch
 2. **Default Seeds**: Automatically seed "Safety Net" and "FIRE" goals whenever a user account has no goals.
 3. **Asset Tagging & Multi-Goal Splits**: Support percentage-based asset splitting across multiple goals with a minimum 10% allocation and in multiples of 10% (10%, 20%, ..., 100%), with total allocation not exceeding 100%.
 4. **Dynamic Layout**: Display the unassigned assets sidebar only when unassigned assets exist; hide it completely and give goals full width once all assets are allocated.
-5. **Analytics First**: Default each goal card to its analytics overview (invested capital, current corpus, return percentage, target gap, and asset allocation breakdown), keeping asset lists collapsed behind a toggle.
+5. **Orbital Horizon Arc Analytics Card**: Present each goal's progress in a dedicated Orbital Horizon Arc card: an animated semi-radial gauge with live number count-up, an animated orbital beacon at the active progress frontier, blue arc for invested capital, green/red arc for accumulated P&L, and clear status breakdown. For open-ended goals, the arc displays the wealth anatomy and compounding multiplier. Keep asset lists collapsed behind a toggle.
 
 ## Constraints
 
 - Never display day's P&L, daily change percentages, or intraday price tickers.
+- Do not display progress bars or percentage clutter on the accordion header title (keep header clean and focused on goal identity and actions).
+- Do not display holding allocation breakdowns (such as % of stocks vs % of mutual funds).
+- Do not label or display 'Goal Returns' (goals represent target corpus vs covered corpus, alongside accumulated asset P&L).
 - Keep total invested corpus and overall valuation in a subtle, low-visibility status strip at the bottom of the dashboard.

@@ -105,7 +105,11 @@ func (s *Service) Sync(ctx context.Context, userID int64) (*PortfolioResponse, e
 		curr := float64(h.Quantity) * h.LastPrice
 		equityInvestment += inv
 		equityCurrentValue += curr
-		equityPnL += h.PnL
+		pnl := h.PnL
+		if pnl == 0 && (curr != 0 || inv != 0) {
+			pnl = round2(curr - inv)
+		}
+		equityPnL += pnl
 		dayPnL += h.DayChange * float64(h.Quantity)
 
 		inserted, err := qtx.InsertHolding(ctx, store.InsertHoldingParams{
@@ -126,7 +130,7 @@ func (s *Service) Sync(ctx context.Context, userID int64) (*PortfolioResponse, e
 			AveragePrice:        h.AveragePrice,
 			LastPrice:           h.LastPrice,
 			ClosePrice:          h.ClosePrice,
-			Pnl:                 h.PnL,
+			Pnl:                 pnl,
 			DayChange:           h.DayChange,
 			DayChangePercentage: h.DayChangePercentage,
 			Discrepancy:         discrepancy,
@@ -146,7 +150,11 @@ func (s *Service) Sync(ctx context.Context, userID int64) (*PortfolioResponse, e
 		curr := mf.Quantity * mf.LastPrice
 		mfInvestment += inv
 		mfCurrentValue += curr
-		mfPnL += mf.Pnl
+		pnl := mf.Pnl
+		if pnl == 0 && (curr != 0 || inv != 0) {
+			pnl = round2(curr - inv)
+		}
+		mfPnL += pnl
 
 		inserted, err := qtx.InsertMFHolding(ctx, store.InsertMFHoldingParams{
 			UserID:        userID,
@@ -156,7 +164,7 @@ func (s *Service) Sync(ctx context.Context, userID int64) (*PortfolioResponse, e
 			AveragePrice:  mf.AveragePrice,
 			LastPrice:     mf.LastPrice,
 			LastPriceDate: mf.LastPriceDate,
-			Pnl:           mf.Pnl,
+			Pnl:           pnl,
 			Quantity:      mf.Quantity,
 			SyncedAt:      now,
 		})
@@ -281,17 +289,29 @@ func (s *Service) GetPortfolio(ctx context.Context, userID int64) (*PortfolioRes
 		// Calculate from stored holdings if no snapshot is present
 		var eqInv, eqCurr, eqPnL, dayPnL float64
 		for _, h := range holdings {
-			eqInv += float64(h.Quantity) * h.AveragePrice
-			eqCurr += float64(h.Quantity) * h.LastPrice
-			eqPnL += h.Pnl
+			inv := float64(h.Quantity) * h.AveragePrice
+			curr := float64(h.Quantity) * h.LastPrice
+			pnl := h.Pnl
+			if pnl == 0 && (curr != 0 || inv != 0) {
+				pnl = round2(curr - inv)
+			}
+			eqInv += inv
+			eqCurr += curr
+			eqPnL += pnl
 			dayPnL += h.DayChange * float64(h.Quantity)
 		}
 
 		var mfInv, mfCurr, mfPnL float64
 		for _, mf := range mfHoldings {
-			mfInv += mf.Quantity * mf.AveragePrice
-			mfCurr += mf.Quantity * mf.LastPrice
-			mfPnL += mf.Pnl
+			inv := mf.Quantity * mf.AveragePrice
+			curr := mf.Quantity * mf.LastPrice
+			pnl := mf.Pnl
+			if pnl == 0 && (curr != 0 || inv != 0) {
+				pnl = round2(curr - inv)
+			}
+			mfInv += inv
+			mfCurr += curr
+			mfPnL += pnl
 		}
 
 		totInv := round2(eqInv + mfInv)
@@ -341,6 +361,11 @@ func (s *Service) enrichHoldings(ctx context.Context, userID int64, equity []sto
 
 	enrichedEquity := make([]HoldingItem, len(equity))
 	for i, h := range equity {
+		inv := float64(h.Quantity) * h.AveragePrice
+		curr := float64(h.Quantity) * h.LastPrice
+		if h.Pnl == 0 && (curr != 0 || inv != 0) {
+			h.Pnl = round2(curr - inv)
+		}
 		key := fmt.Sprintf("%s:%s", h.Tradingsymbol, h.Exchange)
 		allocs := assetAllocationsMap["equity:"+key]
 		if allocs == nil {
@@ -364,6 +389,11 @@ func (s *Service) enrichHoldings(ctx context.Context, userID int64, equity []sto
 
 	enrichedMF := make([]MFHoldingItem, len(mf))
 	for i, m := range mf {
+		inv := m.Quantity * m.AveragePrice
+		curr := m.Quantity * m.LastPrice
+		if m.Pnl == 0 && (curr != 0 || inv != 0) {
+			m.Pnl = round2(curr - inv)
+		}
 		key := fmt.Sprintf("%s:%s", m.Folio, m.Fund)
 		allocs := assetAllocationsMap["mf:"+key]
 		if allocs == nil {
